@@ -1,28 +1,20 @@
-#include"request-buffer.h"
-#include<condition_variable>
+#include "request-buffer.h"
+#include <condition_variable>
 
-RequestBuffer* g_requestBuffer;
+RequestBuffer *g_requestBuffer;
 
+RequestBuffer::RequestBuffer(int maxBufferSize) : m_maxSize(maxBufferSize) { ; }
 
-void RequestBuffer::setMaxSize(int maxSize) {
-    m_maxSize = maxSize;
-}
+void RequestBuffer::setMaxSize(int maxSize) { m_maxSize = maxSize; }
 
-int RequestBuffer::getMaxSize() {
-    return m_maxSize;
-}
+int RequestBuffer::getMaxSize() { return m_maxSize; }
 
-int RequestBuffer::getSize() {
-    return m_buffer.size();
-}
-
+int RequestBuffer::getSize() { return m_buffer.size(); }
 
 void RequestBuffer::addRequest(Request &rq) {
     std::unique_lock<std::mutex> lock(m_lock);
     if (getSize() >= m_maxSize) {
-        m_addCond.wait(lock, [this]() {
-            return getSize() < getMaxSize() / 2;
-        });
+        m_addCond.wait(lock, [this]() { return getSize() < getMaxSize() / 2; });
     }
     m_buffer.push(std::move(rq));
     m_getCond.notify_one();

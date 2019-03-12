@@ -2,27 +2,33 @@
 #include "cache-dict.h"
 
 class ExpireTable {
-private:
+  private:
     // 毫秒精度的计时系统
     std::unordered_map<std::string,
-        std::chrono::time_point<std::chrono::system_clock, std::chrono::milliseconds>> m_map;
+                       std::chrono::time_point<std::chrono::system_clock,
+                                               std::chrono::milliseconds>>
+        m_map;
 
-public:
+  public:
     void set(std::string key, std::chrono::milliseconds time);
     void del(std::string key);
     bool checkExpire(std::string key);
 };
 
 class SimpleCache {
-private:
-    LinkedDict* g_dict;
-    ExpireTable* g_expire;
-public:
+  private:
+    LinkedDict *g_dict;
+    ExpireTable *g_expire;
+
+    int m_maxCacheSize;
+    int m_expireCycle;
+
+  public:
     virtual ~SimpleCache();
-    SimpleCache();
+    SimpleCache(int maxCacheSize, int expireCycle);
 
     void addKeyValue(std::string key, void *value, CacheType valueType);
-    CacheObject* getKeyValue(std::string key);
+    CacheObject *getKeyValue(std::string key);
     void delKeyValue(std::string key);
 
     bool existKeyValue(std::string key);
@@ -31,9 +37,12 @@ public:
     bool checkExpire(std::string key);
     void delExpire(std::string key);
 
-    int getSize();
+    int getCacheSize();
 
-    CacheList* getList();
+    int getMaxCacheSize();
+    int getExpireCycle();
+
+    CacheList *getList();
 };
 
 void startServer();

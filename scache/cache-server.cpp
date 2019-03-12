@@ -76,10 +76,11 @@ void startExpire() {
         exit(0);
     }
     int checkNumber = 10000;
-    checkNumber = std::max(checkNumber, g_simpleCache->getSize());
+    checkNumber = std::max(checkNumber, g_simpleCache->getCacheSize());
     CacheList *list = g_simpleCache->getList();
     while (true) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(25000));
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(g_simpleCache->getExpireCycle()));
 
         auto tempNode = list->getTail();
         auto tempNumber = checkNumber;
@@ -124,7 +125,8 @@ SimpleCache::~SimpleCache() {
     delete g_expire;
 }
 
-SimpleCache::SimpleCache() {
+SimpleCache::SimpleCache(int maxCacheSize, int expireCycle)
+    : m_maxCacheSize(maxCacheSize), m_expireCycle(expireCycle) {
     g_dict =
         dynamic_cast<LinkedDict *>(getInstance("myCache", nullptr, LinkType));
     g_expire = new ExpireTable();
@@ -134,6 +136,11 @@ void SimpleCache::addKeyValue(std::string key, void *value,
                               CacheType valueType) {
     g_dict->addKeyValue(key, value, valueType);
     g_expire->del(key);
+    if (getCacheSize() > m_maxCacheSize) {
+        auto node = g_dict->getList()->popNode();
+        auto key = node->getValue()->getKey();
+        delKeyValue(key);
+    }
 }
 
 CacheObject *SimpleCache::getKeyValue(std::string key) {
@@ -164,7 +171,9 @@ bool SimpleCache::checkExpire(std::string key) {
 }
 void SimpleCache::delExpire(std::string key) { g_expire->del(key); }
 
-int SimpleCache::getSize() { return g_dict->getSize(); }
+int SimpleCache::getCacheSize() { return g_dict->getSize(); }
+int SimpleCache::getMaxCacheSize() { return m_maxCacheSize; }
+int SimpleCache::getExpireCycle() { return m_expireCycle; }
 
 CacheList *SimpleCache::getList() { return g_dict->getList(); }
 

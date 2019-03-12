@@ -48,14 +48,18 @@ class SessionManager {
     Acceptor m_acceptor;
     TcpSocket m_sock;
     std::mutex m_lock;
+    int m_sessionDuration;
 
   public:
-    SessionManager(short port);
+    SessionManager(short port, int sessionDuration);
     ~SessionManager();
 
     void runManager();
 
     void async_send(std::string &name, const std::string &result);
+
+    int getSessionCount();
+    int getSessionDuration();
 
   private:
     void async_accept();

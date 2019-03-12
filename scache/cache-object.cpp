@@ -1,52 +1,33 @@
-#include"cache-object.h"
-#include"cache-list.h"
-#include"cache-dict.h"
+#include "cache-object.h"
+#include "cache-dict.h"
+#include "cache-list.h"
 
-std::string CacheObject::getKey() {
-    return m_key;
-}
+std::string CacheObject::getKey() { return m_key; }
 
-CacheType CacheObject::getValueType() {
-    return m_valueType;
-}
+CacheType CacheObject::getValueType() { return m_valueType; }
 
 // 基类CacheObject相关接口不做任何工作
-void* CacheObject::getValue() {
-    return nullptr;
-}
-void CacheObject::setValue(void* value) {
+void *CacheObject::getValue() { return nullptr; }
+void CacheObject::setValue(void *value) { return; }
+
+void CacheObject::addKeyValue(std::string key, void *value,
+                              CacheType valueType) {
     return;
 }
 
-void CacheObject::addKeyValue(std::string key, void *value, CacheType valueType) {
-    return;
-}
+CacheObject *CacheObject::getKeyValue(std::string key) { return nullptr; }
 
-CacheObject* CacheObject::getKeyValue(std::string key) {
-    return nullptr;
-}
+void CacheObject::delKeyValue(std::string key) { return; }
 
-void CacheObject::delKeyValue(std::string key) {
-    return;
-}
+void CacheLong::setValue(void *value) { m_value = *(long long *)value; }
 
-void CacheLong::setValue(void* value) {
-    m_value = *(long long*)value;
-}
+void *CacheLong::getValue() { return &m_value; }
 
-void* CacheLong::getValue() {
-    return &m_value;
-}
+void CacheString::setValue(void *value) { m_value = *(std::string *)value; }
 
-void CacheString::setValue(void* value) {
-    m_value = *(std::string*)value;
-}
+void *CacheString::getValue() { return &m_value; }
 
-void* CacheString::getValue() {
-    return &m_value;
-}
-
-CacheObject* getInstance(std::string key, void *value, CacheType valueType) {
+CacheObject *getInstance(std::string key, void *value, CacheType valueType) {
     switch (valueType) {
     case LongType:
         return new CacheLong(key, value, valueType);
@@ -64,6 +45,4 @@ CacheObject* getInstance(std::string key, void *value, CacheType valueType) {
     return nullptr;
 }
 
-void destoryInstance(CacheObject* o) {
-    delete o;
-}
+void destoryInstance(CacheObject *o) { delete o; }

@@ -60,9 +60,9 @@ void Session::setRecvHandler(Handler handler) { m_recvHandler = handler; }
 
 std::string Session::getPeer() { return m_name; }
 
-SessionManager::SessionManager(short port)
+SessionManager::SessionManager(short port, int sessionDuration)
     : m_acceptor(m_io, Endpoint(boost::asio::ip::tcp::v4(), port)),
-      m_sock(m_io) {
+      m_sock(m_io), m_sessionDuration(sessionDuration) {
     ;
 }
 
@@ -106,9 +106,12 @@ void SessionManager::async_accept() {
     });
 }
 
-void startSession(){
-    if(!g_sessionManager || !g_requestBuffer){
-        std::cout<<"No session manager and request buffer."<<std::endl;
+int SessionManager::getSessionCount() { return m_sockMap.size(); }
+int SessionManager::getSessionDuration() { return m_sessionDuration; }
+
+void startSession() {
+    if (!g_sessionManager || !g_requestBuffer) {
+        std::cout << "No session manager and request buffer." << std::endl;
         exit(0);
     }
     g_sessionManager->runManager();

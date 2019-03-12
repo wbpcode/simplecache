@@ -1,10 +1,10 @@
 #pragma once
 
-#include<vector>
-#include<string>
-#include<queue>
-#include<mutex>
-#include<condition_variable>
+#include <condition_variable>
+#include <mutex>
+#include <queue>
+#include <string>
+#include <vector>
 
 struct Request {
     std::string m_name;
@@ -12,14 +12,16 @@ struct Request {
 };
 
 class RequestBuffer {
-private:
+  private:
     std::queue<Request> m_buffer;
     std::mutex m_lock;
     std::condition_variable m_addCond;
     std::condition_variable m_getCond;
-    int m_maxSize = 200000;
+    int m_maxSize;
 
-public:
+  public:
+    RequestBuffer(int maxBufferSize);
+    virtual ~RequestBuffer() { ; }
     void addRequest(Request &rq);
     Request getRequest();
     void setMaxSize(int maxSize);

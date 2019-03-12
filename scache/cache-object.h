@@ -31,6 +31,46 @@ class CacheObject {
     friend void destoryInstance(CacheObject *o);
 };
 
+
+class CacheValue :public CacheObject {
+private:
+    void* m_value = nullptr;
+
+    CacheValue(std::string key, CacheType valueType);
+    ~CacheValue();
+
+public:
+    template<class T>
+    T& getValue();
+
+    template<class T>
+    void setValue(T value);
+
+    friend CacheObject *getInstance(std::string key, CacheType valueType);
+    friend void destoryInstance(CacheObject *o);
+};
+
+
+template<class T>
+T& CacheValue::getValue() {
+    if (!m_value) {
+        m_value = new T();
+    }
+    T& value = *(T*)m_value;
+    return value;
+}
+
+template<class T>
+void CacheValue::setValue(T value) {
+    if (!m_value)
+        m_value = new T(std::move(value));
+    else
+        *(T*)m_value = value;
+}
+
+
+
+
 class CacheLong : public CacheObject {
   private:
     long long m_value;
@@ -72,5 +112,6 @@ class CacheString : public CacheObject {
 };
 
 CacheObject *getInstance(std::string key, void *value, CacheType valueType);
+CacheObject *getInstance(std::string key, CacheType valueType);
 
 void destoryInstance(CacheObject *o);

@@ -3,9 +3,12 @@
 #
 cmake_minimum_required (VERSION 3.8)
 
-if(WIN32)
-set(BOOST_ROOT "C:/boost_1_69_0/")
-endif()
+#if(WIN32)
+#set(BOOST_ROOT "C:/boost_1_69_0/")
+#endif()
+
+set(Boost_INCLUDE_DIRS "C:/MinGW/include/")
+set(Boost_LIBRARIES "C:/MinGW/lib/")
 
 find_package(Boost REQUIRED COMPONENTS 
     system
@@ -13,6 +16,7 @@ find_package(Boost REQUIRED COMPONENTS
 
 if(Boost_FOUND)
 include_directories(${Boost_INCLUDE_DIRS})
+link_directories(${Boost_LIBRARIES})
 # 将源代码添加到此项目的可执行文件。
 add_executable (scache 
     "simple-cache.cpp" 

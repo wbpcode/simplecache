@@ -25,13 +25,14 @@ int main(int argc, char **argv) {
         "The maximum number of requests that can be buffered.")(
         "sessionDuration,s", bpo::value<int>()->default_value(1200000),
         "Duration(ms) of session.");
+        
     bpo::variables_map vm;
     bpo::store(bpo::parse_command_line(argc, argv, desc), vm);
     vm.notify();
 
     g_simpleCache = new SimpleCache(vm["maxCacheSize"].as<int>(),
                                     vm["expireCycle"].as<int>());
-                                    
+
     g_requestBuffer = new RequestBuffer(vm["maxBufferSize"].as<int>());
 
     g_sessionManager = new SessionManager(vm["portNumber"].as<short>(),

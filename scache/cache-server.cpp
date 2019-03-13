@@ -126,41 +126,57 @@ SimpleCache::~SimpleCache() {
 }
 
 SimpleCache::SimpleCache(int maxCacheSize, int expireCycle)
-    : m_maxCacheSize(maxCacheSize), m_expireCycle(expireCycle) {
+    : LinkedDict("myCache", LinkType), m_maxCacheSize(maxCacheSize),
+      m_expireCycle(expireCycle) {
     g_dict =
         dynamic_cast<LinkedDict *>(getInstance("myCache", nullptr, LinkType));
     g_expire = new ExpireTable();
 }
 
-void SimpleCache::addKeyValue(std::string key, void *value,
-                              CacheType valueType) {
-    g_dict->addKeyValue(key, value, valueType);
+void SimpleCache::addKeyValue(CacheObject *o) {
+    // 注意区分m_list的成员函数popNode和继承自
+    // LinkedDict的popNode，前者仅仅修改链表，
+    // 而后者修改链表以及m_map
+    CacheListNode *node = nullptr;
+    std::string key = o->getKey();
+    if (m_map.find(key) != m_map.end()) {
+        node = m_map[key];
+        node->destoryValue();
+        node->setValue(o);
+        m_list->popNode(node);
+    } else {
+        node = new CacheListNode(o);
+        m_map[key] = node;
+    }
+    m_list->addNode(node);
+    // 处理过期时间以及超出上限的key-value对
     g_expire->del(key);
-    if (getCacheSize() > m_maxCacheSize) {
-        auto node = g_dict->getList()->popNode();
-        auto key = node->getValue()->getKey();
-        delKeyValue(key);
+    if (getSize() > m_maxCacheSize) {
+        auto v = getTail()->getValue()->getKey();
+        delKeyValue(v);
     }
 }
 
 CacheObject *SimpleCache::getKeyValue(std::string key) {
-    if (g_expire->checkExpire(key)) {
-        g_dict->delKeyValue(key);
-        g_expire->del(key);
+    if (m_map.find(key) == m_map.end()) {
         return nullptr;
-    } else {
-        g_expire->del(key);
-        return g_dict->getKeyValue(key);
     }
+    if (g_expire->checkExpire(key)) {
+        delKeyValue(key);
+        return nullptr;
+    }
+    g_expire->del(key);
+    auto node = m_map[key];
+    m_list->popNode(node);
+    m_list->addNode(node);
+    return node->getValue();
 }
 
 void SimpleCache::delKeyValue(std::string key) {
-    g_dict->delKeyValue(key);
+    auto node = popNode(key);
+    node->destoryValue();
+    delete node;
     g_expire->del(key);
-}
-
-bool SimpleCache::existKeyValue(std::string key) {
-    return g_dict->existKeyValue(key);
 }
 
 void SimpleCache::setExpire(std::string key, long long time) {
@@ -171,13 +187,10 @@ bool SimpleCache::checkExpire(std::string key) {
 }
 void SimpleCache::delExpire(std::string key) { g_expire->del(key); }
 
-int SimpleCache::getCacheSize() { return g_dict->getSize(); }
 int SimpleCache::getMaxCacheSize() { return m_maxCacheSize; }
 int SimpleCache::getExpireCycle() { return m_expireCycle; }
 
-CacheList *SimpleCache::getList() { return g_dict->getList(); }
-
-bool isLongLong(std::string str) {
+bool isNum(std::string str) {
     std::stringstream sin(str);
     long long n;
     char p;
@@ -202,7 +215,7 @@ std::string setKeyValue(Request &rq) {
         if (rq.cmd[3] != EXPIRE_COMMAND) {
             return WRONG_REQUEST_COMMAND;
         }
-        if (!isLongLong(rq.cmd[4])) {
+        if (!isNum(rq.cmd[4])) {
             return WRONG_REQUEST_FORMAT;
         }
         expireTime = std::stoll(rq.cmd[4]);
@@ -210,12 +223,19 @@ std::string setKeyValue(Request &rq) {
             return WRONG_REQUEST_FORMAT;
         }
     }
-    // 更新或者插入新值，旧过期时间默认失效
-    if (isLongLong(rq.cmd[2])) {
-        auto value = std::stoll(rq.cmd[2]);
-        g_simpleCache->addKeyValue(rq.cmd[1], &value, LongType);
+    std::string key = rq.cmd[1], value = rq.cmd[2];
+    auto type = isNum(rq.cmd[2]) ? LongType : StringType;
+
+    auto object = g_simpleCache->getKeyValue(key);
+
+    if (!object || object->getValueType() != type) {
+        object = getInstance(key, type);
+        g_simpleCache->addKeyValue(object);
+    }
+    if (type == LongType) {
+        object->setValue(std::stoll(value))
     } else {
-        g_simpleCache->addKeyValue(rq.cmd[1], &rq.cmd[2], StringType);
+        object->setValue(value);
     }
     // 设置新过期时间
     if (expireTime > 0) {
@@ -238,10 +258,10 @@ std::string getKeyValue(Request &rq) {
     auto valueType = object->getValueType();
     switch (valueType) {
     case LongType:
-        result += std::to_string(*(long long *)object->getValue());
+        result += std::to_string(object->getValue<long long>());
         break;
     case StringType:
-        result += *(std::string *)object->getValue();
+        result += object->getValue<std::string>();
         break;
     case ListType:
         result += object->getKey() + " (list)";
@@ -257,7 +277,7 @@ std::string expireKeyValue(Request &rq) {
     if (rq.cmd.size() != 3) {
         return WRONG_REQUEST_FORMAT;
     }
-    if (!isLongLong(rq.cmd[2])) {
+    if (!isNum(rq.cmd[2])) {
         return WRONG_REQUEST_FORMAT;
     }
     std::string key = rq.cmd[1];
@@ -287,22 +307,29 @@ std::string dictSetKeyValue(Request &rq) {
     }
     std::string mainKey = rq.cmd[1];
     std::string viceKey = rq.cmd[2];
+    std::string value = rq.cmd[3];
+    CacheType type = isNum(value) ? LongType : StringType;
 
     auto object = g_simpleCache->getKeyValue(mainKey);
     // 对应词典不存在则创建词典，对应对象不是词典类型则返回
     // 不支持的操作
     if (!object)
-        g_simpleCache->addKeyValue(mainKey, nullptr, DictType);
+        g_simpleCache->addKeyValue(getInstance(mainKey, DictType));
     else if (object->getValueType() != DictType)
         return UNSUPPORTED_OPERATION;
 
     object = g_simpleCache->getKeyValue(mainKey);
+    auto dict = dynamic_cast<CacheDict *>(object);
 
-    if (isLongLong(rq.cmd[3])) {
-        auto value = std::stoll(rq.cmd[3]);
-        object->addKeyValue(rq.cmd[1], &value, LongType);
+    object = dict->getKeyValue(viceKey);
+    if (!object || object->getValueType() != type) {
+        object = getInstance(viceKey, type);
+        dict->addKeyValue(object);
+    }
+    if (type == LongType) {
+        object->setValue(std::stoll(value))
     } else {
-        object->addKeyValue(rq.cmd[1], &rq.cmd[3], StringType);
+        object->setValue(value);
     }
     return "ok";
 }
@@ -322,16 +349,16 @@ std::string dictGetKeyValue(Request &rq) {
     object = object->getKeyValue(viceKey);
     if (!object)
         return KEY_VALUE_NOT_EXIST;
-    auto valueType = object->getValueType();
+    CacheType type = object->getValueType();
 
     std::string result = "ok ";
 
-    switch (valueType) {
+    switch (type) {
     case LongType:
-        result += std::to_string(*(long long *)object->getValue());
+        result += std::to_string(object->getValue<long long>());
         break;
     case StringType:
-        result += *(std::string *)object->getValue();
+        result += object->getValue<std::string>();
         break;
     case ListType:
         result += object->getKey() + " (list)";
@@ -368,29 +395,31 @@ std::string listAddKeyValue(Request &rq) {
         return WRONG_REQUEST_FORMAT;
     }
     std::string mainKey = rq.cmd[1];
-    std::string viceKey, rawValue;
+    std::string viceKey, value;
     if (rq.cmd.size() == 4) {
         viceKey = rq.cmd[2];
-        rawValue = rq.cmd[3];
+        value = rq.cmd[3];
     } else {
-        rawValue = rq.cmd[2];
+        value = rq.cmd[2];
     }
-
+    CachtType type = isNum(value) ? LongType : StringType;
     // 检查对象是否存在以及类型是否匹配
     auto object = g_simpleCache->getKeyValue(mainKey);
     if (!object)
-        g_simpleCache->addKeyValue(mainKey, nullptr, ListType);
+        g_simpleCache->addKeyValue(getInstance(mainKey, ListType));
     else if (object->getValueType() != ListType)
         return UNSUPPORTED_OPERATION;
 
     object = g_simpleCache->getKeyValue(mainKey);
+    auto list = dynamic_cast<CacheList *>(object);
 
-    if (isLongLong(rawValue)) {
-        auto value = std::stoll(rawValue);
-        object->addKeyValue(viceKey, &value, LongType);
+    object = getInstance(viceKey, type);
+    if (type == LongType) {
+        object->setValue(std::stoll(value))
     } else {
-        object->addKeyValue(viceKey, &rawValue, StringType);
+        object->setValue(value);
     }
+    list->addKeyValue(object);
 
     return "ok";
 }
@@ -402,19 +431,20 @@ std::string listAddmKeyValue(Request &rq) {
     std::string mainKey = rq.cmd[1];
     auto object = g_simpleCache->getKeyValue(mainKey);
     if (!object)
-        g_simpleCache->addKeyValue(mainKey, nullptr, ListType);
+        g_simpleCache->addKeyValue(getInstance(mainKey, ListType));
     else if (object->getValueType() != ListType)
         return UNSUPPORTED_OPERATION;
     object = g_simpleCache->getKeyValue(mainKey);
 
     for (int i = 2; i < rq.cmd.size(); i++) {
-        std::string rawValue = rq.cmd[i];
-        if (isLongLong(rawValue)) {
-            auto value = std::stoll(rawValue);
-            object->addKeyValue(std::string(), &value, LongType);
-        } else {
-            object->addKeyValue(std::string(), &rawValue, StringType);
-        }
+        std::string value = rq.cmd[i];
+        auto type = isNum(value) ? LongType : StringType;
+        subObject = getInstance(std::string(), type);
+        if (type == LongType)
+            subObject->setValue(std::stoll(value));
+        else
+            subObject->setValue(value);
+        object->addKeyValue(subObject);
     }
     return "ok";
 }
@@ -425,7 +455,7 @@ std::string listPopKeyValue(Request &rq) {
     }
     std::string mainKey = rq.cmd[1];
     std::string viceKey;
-    if (rq.cmd.size()) {
+    if (rq.cmd.size() == 3) {
         viceKey = rq.cmd[2];
     }
     auto object = g_simpleCache->getKeyValue(mainKey);
@@ -450,14 +480,14 @@ std::string listPopKeyValue(Request &rq) {
     object = node->getValue();
 
     std::string result = "ok ";
-    auto valueType = object->getValueType();
+    auto type = object->getValueType();
 
-    switch (valueType) {
+    switch (type) {
     case LongType:
-        result += std::to_string(*(long long *)object->getValue());
+        result += std::to_string(object->getValue<long long>());
         break;
     case StringType:
-        result += *(std::string *)object->getValue();
+        result += object->getValue<std::string>();
         break;
     }
 
@@ -497,14 +527,14 @@ std::string listGetKeyValue(Request &rq) {
     object = node->getValue();
 
     std::string result = "ok ";
-    auto valueType = object->getValueType();
+    auto type = object->getValueType();
 
-    switch (valueType) {
+    switch (type) {
     case LongType:
-        result += std::to_string(*(long long *)object->getValue());
+        result += std::to_string(object->getValue<long long>());
         break;
     case StringType:
-        result += *(std::string *)object->getValue();
+        result += object->getValue<std::string>();
         break;
     }
     return result;
@@ -526,19 +556,20 @@ std::string listAllKeyValue(Request &rq) {
     std::string result = "ok ";
     while (node = node->getNext()) {
         object = node->getValue();
-        auto valueType = object->getValueType();
-        if (object->getKey() == std::string()) {
+        auto type = object->getValueType();
+        if (object->getKey() == std::string())
             result += "(empty) ";
-        }
-        switch (valueType) {
+        else
+            result += object->getKey() + " ";
+        switch (type) {
         case LongType:
-            result += std::to_string(*(long long *)object->getValue());
+            result += std::to_string(object->getValue<long long>());
             break;
         case StringType:
-            result += *(std::string *)object->getValue();
+            result += object->getValue<std::string>();
             break;
         }
-        result += " ";
+        result += "\r\n";
     }
     return result;
 }

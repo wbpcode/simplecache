@@ -12,13 +12,13 @@ void CacheListNode::setValue(CacheObject *value) { m_value = value; }
 
 CacheObject *CacheListNode::getValue() { return m_value; }
 
-// 弹出一个节点时:节点本身销毁，但是对应的CacheObject需要保留
+// 弹出一个节点时:节点本身可能会被销毁，但是对应的CacheObject可能需要保留
 // 删除一个节点时:需要同时销毁保存的CacheObject
 // 所以提供一个函数显式销毁所管理的CacheObject
 void CacheListNode::destoryValue() { destoryInstance(m_value); }
 
 // 根据key搜索
-CacheListNode *CacheList::serachByKey(std::string key) {
+CacheListNode *CacheList::getNode(std::string key) {
     CacheListNode *temp = m_head->getNext();
     while (temp) {
         if (temp->getValue()->getKey() == key) {
@@ -29,21 +29,20 @@ CacheListNode *CacheList::serachByKey(std::string key) {
     return nullptr;
 }
 
-void CacheList::addKeyValue(std::string key, void *value, CacheType valueType) {
-    auto temp = getInstance(key, value, valueType);
-    auto node = new CacheListNode(temp);
+void CacheList::addKeyValue(CacheObject* o) {
+    auto node = new CacheListNode(o);
     addNode(node);
 }
 
 CacheObject *CacheList::getKeyValue(std::string key) {
-    auto node = serachByKey(key);
+    auto node = getNode(key);
     if (node)
         return node->getValue();
     return nullptr;
 }
 
 void CacheList::delKeyValue(std::string key) {
-    auto node = serachByKey(key);
+    auto node = getNode(key);
     if (!node)
         return;
     popNode(node);
@@ -92,7 +91,7 @@ CacheListNode *CacheList::popNode(CacheListNode *node = nullptr) {
 }
 
 CacheList::CacheList(std::string key, CacheType valueType = ListType)
-    : CacheObject(key, valueType) {
+    : CacheContainer(key, valueType) {
     m_head = new CacheListNode();
     m_head->setNext(nullptr);
     m_head->setPrev(nullptr);

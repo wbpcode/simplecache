@@ -1,4 +1,5 @@
 #include "cache-dict.h"
+#include <iostream>
 #include <map>
 
 // 增加新对象或者更新对象
@@ -42,9 +43,9 @@ CacheDict::~CacheDict() {
     }
 }
 
-int CacheDict::getSize() { return m_map.size(); }
+long long CacheDict::getSize() { return m_map.size(); }
 
-LinkedDict::LinkedDict(std::string key, CacheType valueType = LinkType)
+LinkedDict::LinkedDict(std::string key, CacheType valueType)
     : CacheContainer(key, valueType) {
     m_list =
         dynamic_cast<CacheList *>(getInstance(key + ":myCacheList", ListType));
@@ -87,8 +88,7 @@ void LinkedDict::delKeyValue(std::string key) {
     delete node;
 }
 
-CacheListNode *LinkedDict::addNode(CacheListNode *node,
-                                   CacheListNode *pos = nullptr) {
+CacheListNode *LinkedDict::addNode(CacheListNode *node, CacheListNode *pos) {
     m_list->addNode(node, pos);
     m_map[node->getValue()->getKey()] = node;
     return node;
@@ -103,8 +103,8 @@ CacheListNode *LinkedDict::getNode(std::string key) {
     }
     return nullptr;
 }
-CacheListNode *LinkedDict::popNode(CacheListNode *node = nullptr) {
-    CacheListNode *node = m_list->popNode(node);
+CacheListNode *LinkedDict::popNode(CacheListNode *node) {
+    node = m_list->popNode(node);
     m_map.erase(node->getValue()->getKey());
     return node;
 }
@@ -123,4 +123,4 @@ bool LinkedDict::existKeyValue(std::string key) {
     return true;
 }
 
-int LinkedDict::getSize() { return m_map.size(); }
+long long LinkedDict::getSize() { return m_map.size(); }

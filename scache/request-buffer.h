@@ -17,14 +17,14 @@ class RequestBuffer {
     std::mutex m_lock;
     std::condition_variable m_addCond;
     std::condition_variable m_getCond;
-    int m_maxSize;
+    long long m_maxSize;
 
   public:
-    RequestBuffer(int maxBufferSize);
+    RequestBuffer(long long maxBufferSize);
     virtual ~RequestBuffer() { ; }
     void addRequest(Request &rq);
     Request getRequest();
-    void setMaxSize(int maxSize);
-    int getMaxSize();
-    int getSize();
+    void setMaxSize(long long maxSize);
+    long long getMaxSize();
+    long long getSize();
 };

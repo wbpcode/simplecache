@@ -18,13 +18,13 @@ class CacheDict : public CacheContainer {
     virtual ~CacheDict();
 
   public:
-    virtual void addKeyValue(CacheObject* o);
+    virtual void addKeyValue(CacheObject *o);
     virtual CacheObject *getKeyValue(std::string key);
     virtual void delKeyValue(std::string key);
 
     bool existKeyValue(std::string key);
 
-    int getSize();
+    long long getSize();
 
     friend CacheObject *getInstance(std::string key, CacheType valueType);
     friend void destoryInstance(CacheObject *o);
@@ -39,7 +39,7 @@ class LinkedDict : public CacheContainer {
     virtual ~LinkedDict();
 
   public:
-    virtual void addKeyValue(CacheObject* o);
+    virtual void addKeyValue(CacheObject *o);
     virtual CacheObject *getKeyValue(std::string key);
     virtual void delKeyValue(std::string key);
 
@@ -54,7 +54,7 @@ class LinkedDict : public CacheContainer {
     CacheListNode *popNode(CacheListNode *node = nullptr);
     CacheListNode *popNode(std::string key);
 
-    int getSize();
+    long long getSize();
 
     CacheListNode *getHead();
     CacheListNode *getTail();

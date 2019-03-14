@@ -27,7 +27,7 @@ class CacheValue : public CacheObject {
   private:
     void *m_value = nullptr;
 
-protected:
+  protected:
     CacheValue(std::string key, CacheType valueType)
         : CacheObject(key, valueType) {
         ;
@@ -60,12 +60,15 @@ template <class T> void CacheValue::setValue(T value) {
 
 class CacheContainer : public CacheObject {
   protected:
-    CacheContainer(std::string key, CacheType valueType);
-    virtual ~CacheContainer();
+    CacheContainer(std::string key, CacheType valueType)
+        : CacheObject(key, valueType) {
+        ;
+    }
+    virtual ~CacheContainer() { ; }
 
   public:
     virtual void addKeyValue(CacheObject *o) = 0;
-    virtual CacheObject* getKeyValue(std::string key) = 0;
+    virtual CacheObject *getKeyValue(std::string key) = 0;
     virtual void delKeyValue(std::string key) = 0;
 
     friend void destoryInstance(CacheObject *o);

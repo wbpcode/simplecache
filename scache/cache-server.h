@@ -7,7 +7,7 @@ using TimePoint = std::chrono::time_point<std::chrono::system_clock,
 class ExpireTable {
   private:
     // 毫秒精度的计时系统
-    std::unordered_map<std::string,TimePoint> m_map;
+    std::unordered_map<std::string, TimePoint> m_map;
 
   public:
     void set(std::string key, std::chrono::milliseconds time);
@@ -15,18 +15,17 @@ class ExpireTable {
     bool checkExpire(std::string key);
 };
 
-class SimpleCache: public LinkedDict {
+class SimpleCache : public LinkedDict {
   private:
     ExpireTable *m_expire;
-    int m_maxCacheSize;
-    int m_expireCycle;
+    long long m_maxCacheSize;
+    long long m_expireCycle;
 
   public:
     virtual ~SimpleCache();
-    SimpleCache(int maxCacheSize, int expireCycle);
+    SimpleCache(long long maxCacheSize, long long expireCycle);
 
-
-    virtual void addKeyValue(CacheObject* o);
+    virtual void addKeyValue(CacheObject *o);
     virtual CacheObject *getKeyValue(std::string key);
     virtual void delKeyValue(std::string key);
 
@@ -34,8 +33,8 @@ class SimpleCache: public LinkedDict {
     bool checkExpire(std::string key);
     void delExpire(std::string key);
 
-    int getMaxCacheSize();
-    int getExpireCycle();
+    long long getMaxCacheSize();
+    long long getExpireCycle();
 };
 
 void startServer();

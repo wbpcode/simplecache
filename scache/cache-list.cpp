@@ -1,4 +1,5 @@
 #include "cache-list.h"
+#include <iostream>
 
 void CacheListNode::setNext(CacheListNode *next) { m_next = next; }
 
@@ -29,7 +30,7 @@ CacheListNode *CacheList::getNode(std::string key) {
     return nullptr;
 }
 
-void CacheList::addKeyValue(CacheObject* o) {
+void CacheList::addKeyValue(CacheObject *o) {
     auto node = new CacheListNode(o);
     addNode(node);
 }
@@ -51,8 +52,7 @@ void CacheList::delKeyValue(std::string key) {
 }
 
 // 插入一个新节点
-CacheListNode *CacheList::addNode(CacheListNode *node,
-                                  CacheListNode *pos = nullptr) {
+CacheListNode *CacheList::addNode(CacheListNode *node, CacheListNode *pos) {
     if (!pos)
         pos = m_head; // 若没有指定位置，默认从头部插入
     auto temp = pos->getNext();
@@ -72,7 +72,7 @@ CacheListNode *CacheList::addNode(CacheListNode *node,
 }
 
 // 将一个节点从链表移除
-CacheListNode *CacheList::popNode(CacheListNode *node = nullptr) {
+CacheListNode *CacheList::popNode(CacheListNode *node) {
     if (m_size <= 0)
         return nullptr;
     // 默认从尾部弹出节点
@@ -90,7 +90,7 @@ CacheListNode *CacheList::popNode(CacheListNode *node = nullptr) {
     return node;
 }
 
-CacheList::CacheList(std::string key, CacheType valueType = ListType)
+CacheList::CacheList(std::string key, CacheType valueType)
     : CacheContainer(key, valueType) {
     m_head = new CacheListNode();
     m_head->setNext(nullptr);
@@ -112,4 +112,4 @@ CacheListNode *CacheList::getHead() { return m_head; }
 
 CacheListNode *CacheList::getTail() { return m_tail; }
 
-int CacheList::getSize() { return m_size; }
+long long CacheList::getSize() { return m_size; }

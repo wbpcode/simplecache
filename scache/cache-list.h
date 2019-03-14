@@ -25,16 +25,16 @@ class CacheListNode {
 
 class CacheList : public CacheContainer {
   private:
-    int m_size;
-    CacheListNode *m_head;
-    CacheListNode *m_tail;
+    long long m_size = 0;
+    CacheListNode *m_head = nullptr;
+    CacheListNode *m_tail = nullptr;
 
   protected:
     CacheList(std::string key, CacheType valueType = ListType);
     virtual ~CacheList();
 
   public:
-    virtual void addKeyValue(CacheObject* o);
+    virtual void addKeyValue(CacheObject *o);
     virtual CacheObject *getKeyValue(std::string key);
     virtual void delKeyValue(std::string key);
 
@@ -45,11 +45,9 @@ class CacheList : public CacheContainer {
     // delKeyvalue会销毁节点而popNode不会
     CacheListNode *popNode(CacheListNode *node = nullptr);
 
-
-
     CacheListNode *getHead();
     CacheListNode *getTail();
-    int getSize();
+    long long getSize();
 
     friend CacheObject *getInstance(std::string key, CacheType valueType);
     friend void destoryInstance(CacheObject *o);

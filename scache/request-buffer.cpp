@@ -3,13 +3,16 @@
 
 RequestBuffer *g_requestBuffer;
 
-RequestBuffer::RequestBuffer(int maxBufferSize) : m_maxSize(maxBufferSize) { ; }
+RequestBuffer::RequestBuffer(long long maxBufferSize)
+    : m_maxSize(maxBufferSize) {
+    ;
+}
 
-void RequestBuffer::setMaxSize(int maxSize) { m_maxSize = maxSize; }
+void RequestBuffer::setMaxSize(long long maxSize) { m_maxSize = maxSize; }
 
-int RequestBuffer::getMaxSize() { return m_maxSize; }
+long long RequestBuffer::getMaxSize() { return m_maxSize; }
 
-int RequestBuffer::getSize() { return m_buffer.size(); }
+long long RequestBuffer::getSize() { return m_buffer.size(); }
 
 void RequestBuffer::addRequest(Request &rq) {
     std::unique_lock<std::mutex> lock(m_lock);

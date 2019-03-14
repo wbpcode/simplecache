@@ -3,20 +3,23 @@
 #
 cmake_minimum_required (VERSION 3.8)
 
-#if(WIN32)
-#set(BOOST_ROOT "C:/boost_1_69_0/")
-#endif()
+if(WIN32)
+set(BOOST_ROOT "C:/boost_1_69_0/")
+set(Boost_LIBRARIES "C:/boost_1_69_0/stage/lib")
+set(BOOST_LIBRARYDIR "C:/boost_1_69_0/stage/lib")
+endif()
 
-set(Boost_INCLUDE_DIRS "C:/MinGW/include/")
-set(Boost_LIBRARIES "C:/MinGW/lib/")
+set(Boost_USE_STATIC_LIBS ON)
+set(Boost_USE_MULTITHREADED ON)
 
 find_package(Boost REQUIRED COMPONENTS 
     system
+    date_time
+    regex
     program_options)
 
 if(Boost_FOUND)
 include_directories(${Boost_INCLUDE_DIRS})
-link_directories(${Boost_LIBRARIES})
 # 将源代码添加到此项目的可执行文件。
 add_executable (scache 
     "simple-cache.cpp" 
@@ -34,6 +37,7 @@ add_executable (scache
     "cache-session.cpp")
 
 target_link_libraries(scache ${Boost_LIBRARIES})
+
 else()
 message("No Boost!!!")
 endif()

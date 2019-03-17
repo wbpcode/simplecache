@@ -2,13 +2,12 @@
 #include "request-buffer.h"
 #include <boost/bind.hpp>
 #include <regex>
+#include <iostream>
 
 namespace bpt = boost::posix_time;
 
-SessionManager *g_sessionManager;
-extern RequestBuffer *g_requestBuffer;
-
 void revcHandlerImpl(std::string &peer, std::string &rawData) {
+    auto requestBuffer = getRequestBuffer();
     static std::regex re("(\\S+)|(\"[^\"]*\")");
     Request rq;
     rq.m_name = peer;
@@ -20,62 +19,57 @@ void revcHandlerImpl(std::string &peer, std::string &rawData) {
     if (rq.cmd.size() == 0) {
         rq.cmd.push_back(std::move(rawData));
     }
-    g_requestBuffer->addRequest(rq);
+    requestBuffer->addRequest(rq);
 }
 
 void shutHandlerImpl(std::string &peer, std::string &message) {
     // �漰��Session�����٣����ȱ���peer��message
     std::string tempPeer = std::move(peer);
     std::string tempMessage = std::move(message);
-    g_sessionManager->shutSession(peer);
+    auto sessionManager = getSessionManager();
+    sessionManager->shutSession(peer);
     std::cout << "Session: " + tempPeer + " is shutdowned: " + tempMessage
               << std::endl;
 }
 
-Session::Session(TcpSocket sock, size_t bufferSize, long long sessionDuration)
-    : m_sock(std::move(sock)), m_buffer(std::string(bufferSize, '0')),
-      m_sessionDuration(sessionDuration), m_deadTimer(m_sock.get_io_service()) {
-    auto remoteEndpoint = m_sock.remote_endpoint();
-
+Session::Session(TcpSocket sock)
+    : m_tcpSocket(std::move(sock)), m_deadTimer(m_tcpSocket.get_io_service()) {
+    m_globalConfig = getGlobalConfig();
+    m_buffer = std::move(std::string(m_globalConfig->sessionBufferSize, '0'));
+    auto remoteEndpoint = m_tcpSocket.remote_endpoint();
     m_name = remoteEndpoint.address().to_string() + ":" +
              std::to_string(remoteEndpoint.port());
 
-    m_lastAccess = std::chrono::time_point_cast<std::chrono::milliseconds>(
-                       std::chrono::system_clock::now())
-                       .time_since_epoch()
-                       .count();
+    m_lastAccess = getCurrentTime();
 
-    setDeadTimer(m_sessionDuration);
+    setDeadTimer(m_globalConfig->sessionDuration);
 }
 
-void Session::setDeadTimer(long long time) {
+void Session::setDeadTimer(int64 time) {
     m_deadTimer.expires_from_now(bpt::millisec(time));
     m_deadTimer.async_wait([this](const boost::system::error_code &ec) {
         if (ec) {
             std::cout << "Dead Timer is cancelled." << std::endl;
             return;
         }
-        auto now = std::chrono::time_point_cast<std::chrono::milliseconds>(
-                       std::chrono::system_clock::now())
-                       .time_since_epoch()
-                       .count();
+        auto now = getCurrentTime();
         auto interval = now - m_lastAccess;
-        if (interval >= m_sessionDuration) {
+        if (interval >= m_globalConfig->sessionDuration) {
             std::string messages = "Session expired.";
             m_shutHandler(m_name, messages);
         } else {
-            setDeadTimer(m_sessionDuration - interval);
+            setDeadTimer(m_globalConfig->sessionDuration - interval);
         }
     });
 }
 
 Session::~Session() {
-    m_sock.shutdown(m_sock.shutdown_both);
-    m_sock.close();
+    m_tcpSocket.shutdown(m_tcpSocket.shutdown_both);
+    m_tcpSocket.close();
 }
 
 void Session::async_recv() {
-    m_sock.async_read_some(
+    m_tcpSocket.async_read_some(
         boost::asio::buffer(m_buffer),
         [this](const boost::system::error_code &ec, size_t size) {
             if (!ec) {
@@ -98,7 +92,7 @@ void Session::async_recv() {
 void Session::aysnc_send(const std::string &result) {
     m_buffer.replace(0, result.size(), result);
     boost::asio::async_write(
-        m_sock, boost::asio::buffer(m_buffer, result.size()),
+        m_tcpSocket, boost::asio::buffer(m_buffer, result.size()),
         [this](const boost::system::error_code &ec, size_t size) {
             if (!ec) {
                 if (m_sendHandler) {
@@ -120,46 +114,47 @@ void Session::setShutHandler(Handler handler) { m_shutHandler = handler; }
 
 std::string Session::getPeer() { return m_name; }
 
-SessionManager::SessionManager(short port, long long sessionDuration)
-    : m_acceptor(m_io, EndPoint(boost::asio::ip::tcp::v4(), port)),
-      m_sock(m_io), m_sessionDuration(sessionDuration) {
-    ;
+SessionManager::SessionManager()
+    : m_globalConfig(getGlobalConfig()),
+    m_endpoint(boost::asio::ip::tcp::v4(), m_globalConfig->listeningPort),
+    m_acceptor(m_ioService, m_endpoint), m_tcpSocket(m_ioService) {
+    std::cout << "Lisening port: " + std::to_string(m_endpoint.port()) << std::endl;
 }
 
 SessionManager::~SessionManager() {
-    for (auto &e : m_sockMap) {
+    for (auto &e : m_sessionTable) {
         delete e.second;
     }
-    m_io.stop();
+    m_ioService.stop();
 }
 
 void SessionManager::runManager() {
     async_accept();
-    m_io.run();
+    m_ioService.run();
 }
 
-void SessionManager::async_send(std::string &name, const std::string &result) {
-    if (m_sockMap.find(name) == m_sockMap.end())
+void SessionManager::async_send(const std::string &name, const std::string &result) {
+    if (m_sessionTable.find(name) == m_sessionTable.end())
         return;
-    m_lock.lock();
-    auto session = m_sockMap[name];
-    m_lock.unlock();
+    m_sessionTableLock.lock();
+    auto session = m_sessionTable[name];
+    m_sessionTableLock.unlock();
     session->aysnc_send(result);
 }
 
 void SessionManager::async_accept() {
-    m_acceptor.async_accept(m_sock, [this](
-                                        const boost::system::error_code &ec) {
+    m_acceptor.async_accept(m_tcpSocket, 
+        [this](const boost::system::error_code &ec) {
         if (!ec) {
-            auto newSession =
-                new Session(std::move(m_sock), 4096, m_sessionDuration);
-            m_lock.lock();
-            m_sockMap[newSession->getPeer()] = newSession;
-            m_lock.unlock();
+            auto newSession = new Session(std::move(m_tcpSocket));
+            m_sessionTableLock.lock();
+            auto sessionName = newSession->getPeer();
+            m_sessionTable[sessionName] = newSession;
+            m_sessionTableLock.unlock();
             newSession->setRecvHandler(revcHandlerImpl);
             newSession->setSendHandler(nullptr);
             newSession->setShutHandler(shutHandlerImpl);
-            std::cout << "New session: " + newSession->getPeer() << std::endl;
+            std::cout << "New session: " + sessionName << std::endl;
             newSession->async_recv();
         } else {
             std::cout << ec.message() << std::endl;
@@ -168,22 +163,37 @@ void SessionManager::async_accept() {
     });
 }
 
-long long SessionManager::getSessionCount() { return m_sockMap.size(); }
-long long SessionManager::getSessionDuration() { return m_sessionDuration; }
+int64 SessionManager::getSessionCount() { return m_sessionTable.size(); }
 
-void SessionManager::shutSession(std::string &peer) {
-    if (m_sockMap.find(peer) == m_sockMap.end()) {
+void SessionManager::shutSession(const std::string &peer) {
+    if (m_sessionTable.find(peer) == m_sessionTable.end()) {
         return;
     }
-    auto session = m_sockMap[peer];
+    auto session = m_sessionTable[peer];
     delete session;
-    m_sockMap.erase(peer);
+    m_sessionTable.erase(peer);
 }
 
+inline int64 getCurrentTime() {
+    return std::chrono::time_point_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now())
+        .time_since_epoch()
+        .count();
+}
+
+SessionManager* getSessionManager() {
+    static SessionManager* manager = new SessionManager();
+    return manager;
+}
+
+void delSessionManager() {
+    delete getSessionManager();
+}
+
+
 void startSession() {
-    if (!g_sessionManager || !g_requestBuffer) {
-        std::cout << "No session manager and request buffer." << std::endl;
-        exit(0);
-    }
-    g_sessionManager->runManager();
+    std::cout << "Session task is started." << std::endl;
+    auto manager = getSessionManager();
+    manager->runManager();
+    std::cout << "Session task is closed." << std::endl;
 }

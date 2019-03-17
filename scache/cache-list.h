@@ -50,5 +50,5 @@ class CacheList : public CacheContainer {
     long long getSize();
 
     friend CacheObject *getInstance(std::string key, CacheType valueType);
-    friend void destoryInstance(CacheObject *o);
+    friend void delInstance(CacheObject *o);
 };

@@ -9,10 +9,6 @@
 #include <string>
 #include <vector>
 
-SimpleCache *g_simpleCache;
-extern RequestBuffer *g_requestBuffer;
-extern SessionManager *g_sessionManager;
-
 // Command
 const std::string SET_COMMAND = "set";
 const std::string GET_COMMAND = "get";
@@ -26,44 +22,74 @@ const std::string LADDM_COMMAND = "laddm";
 const std::string LPOP_COMMAND = "lpop";
 const std::string LGET_COMMAND = "lget";
 const std::string LALL_COMMAND = "lall";
+const std::string LOCK_COMMAND = "lock";
+const std::string UNLOCK_COMMAND = "unlock";
 
 // Error message
 const std::string WRONG_REQUEST_FORMAT = "error wrong request format";
 const std::string WRONG_REQUEST_COMMAND = "error wrong request command";
 const std::string KEY_VALUE_NOT_EXIST = "error key-value not exist";
 const std::string UNSUPPORTED_OPERATION = "error unsupported operation";
+const std::string KEY_VALUE_IS_LOCKED = "error key-value is locked";
 
 // 标志过期时间任务
 const std::string EXPIRE_TASK = "expireTask";
 
-void ExpireTable::set(std::string key, std::chrono::milliseconds time) {
-    auto expireTime = std::chrono::time_point_cast<std::chrono::milliseconds>(
-                          std::chrono::system_clock::now()) +
-                      time;
-    m_map[key] = expireTime;
+void CacheExpireTable::set(std::string &key, int64 time) {
+    m_map[key] = getCurrentTime() + time;
 }
-void ExpireTable::del(std::string key) {
+void CacheExpireTable::del(std::string &key) {
     if (m_map.find(key) == m_map.end()) {
         return;
     }
     m_map.erase(key);
 }
 
-bool ExpireTable::checkExpire(std::string key) {
+bool CacheExpireTable::checkExpire(std::string &key) {
     if (m_map.find(key) == m_map.end()) {
         return false;
     }
-    auto now = std::chrono::time_point_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now());
-    return now >= m_map[key];
+    return getCurrentTime() >= m_map[key];
 }
 
-SimpleCache::~SimpleCache() { delete m_expire; }
+CacheLock::CacheLock(std::string &name, int64 time) :
+    m_name(name), m_expireTime(time) {
+    ;
+}
 
-SimpleCache::SimpleCache(long long maxCacheSize, long long expireCycle)
-    : LinkedDict("myCache", LinkType), m_maxCacheSize(maxCacheSize),
-      m_expireCycle(expireCycle) {
-    m_expire = new ExpireTable();
+void CacheLockTable::set(std::string &key, std::string &name, int64 time) {
+    m_map[key] = CacheLock(name, getCurrentTime() + time);
+}
+
+void CacheLockTable::del(std::string &key) {
+    if (m_map.find(key) == m_map.end()) {
+        return;
+    }
+    m_map.erase(key);
+}
+
+bool CacheLockTable::checkLock(std::string &key, std::string &name) {
+    if (m_map.find(key) == m_map.end()) {
+        return false;
+    }
+    auto lock = m_map[key];
+    if (getCurrentTime() >= lock.m_expireTime) {
+        del(key);
+        return false;
+    }
+    if (name != lock.m_name) {
+        return true;
+    }
+    return false;
+}
+
+
+SimpleCache::~SimpleCache() { delete m_expireTable; delete m_lockTable; }
+
+SimpleCache::SimpleCache() : LinkedDict("mySimpleCache",LinkType) {
+    m_expireTable = new CacheExpireTable();
+    m_lockTable = new CacheLockTable();
+    m_globalConfig = getGlobalConfig();
 }
 
 void SimpleCache::addKeyValue(CacheObject *o) {
@@ -83,8 +109,8 @@ void SimpleCache::addKeyValue(CacheObject *o) {
     }
     m_list->addNode(node);
     // 处理过期时间以及超出上限的key-value对
-    m_expire->del(key);
-    if (getSize() > m_maxCacheSize) {
+    m_expireTable->del(key);
+    if (getSize() > m_globalConfig->maxCacheSize) {
         auto v = getTail()->getValue()->getKey();
         delKeyValue(v);
     }
@@ -94,11 +120,11 @@ CacheObject *SimpleCache::getKeyValue(std::string key) {
     if (m_map.find(key) == m_map.end()) {
         return nullptr;
     }
-    if (m_expire->checkExpire(key)) {
+    if (m_expireTable->checkExpire(key)) {
         delKeyValue(key);
         return nullptr;
     }
-    m_expire->del(key);
+    m_expireTable->del(key);
     auto node = m_map[key];
     m_list->popNode(node);
     m_list->addNode(node);
@@ -109,19 +135,28 @@ void SimpleCache::delKeyValue(std::string key) {
     auto node = popNode(key);
     node->destoryValue();
     delete node;
-    m_expire->del(key);
+    m_expireTable->del(key);
 }
 
-void SimpleCache::setExpire(std::string key, long long time) {
-    m_expire->set(key, std::chrono::milliseconds(time));
+void SimpleCache::setExpire(std::string &key, int64 time) {
+    m_expireTable->set(key, time);
 }
-bool SimpleCache::checkExpire(std::string key) {
-    return m_expire->checkExpire(key);
+bool SimpleCache::checkExpire(std::string &key) {
+    return m_expireTable->checkExpire(key);
 }
-void SimpleCache::delExpire(std::string key) { m_expire->del(key); }
+void SimpleCache::delExpire(std::string &key) { 
+    m_expireTable->del(key); 
+}
 
-long long SimpleCache::getMaxCacheSize() { return m_maxCacheSize; }
-long long SimpleCache::getExpireCycle() { return m_expireCycle; }
+void SimpleCache::setLock(std::string &key, std::string &name) {
+    m_lockTable->set(key, name, m_globalConfig->lockDuration);
+}
+bool SimpleCache::checkLock(std::string &key,std::string &name) {
+    return m_lockTable->checkLock(key, name);
+}
+void SimpleCache::delLock(std::string &key) {
+    m_lockTable->del(key);
+}
 
 bool isNum(std::string str) {
     std::stringstream sin(str);
@@ -143,7 +178,7 @@ std::string setKeyValue(Request &rq) {
         return WRONG_REQUEST_FORMAT;
     }
     // 检查是否有设置过期时间及过期时间设置格式是否正确
-    long long expireTime = 0;
+    int64 expireTime = 0;
     if (rq.cmd.size() == 5) {
         if (rq.cmd[3] != EXPIRE_COMMAND) {
             return WRONG_REQUEST_COMMAND;
@@ -156,15 +191,18 @@ std::string setKeyValue(Request &rq) {
             return WRONG_REQUEST_FORMAT;
         }
     }
+    auto cache = getSimpleCache();
     std::string key = rq.cmd[1], value = rq.cmd[2];
     auto type = isNum(rq.cmd[2]) ? LongType : StringType;
-
-    auto object = g_simpleCache->getKeyValue(key);
+    if (cache->checkLock(key, rq.m_name)) {
+        return KEY_VALUE_IS_LOCKED;
+    }
+    auto object = cache->getKeyValue(key);
     if (!object || object->getValueType() != type) {
         object = getInstance(key, type);
-        g_simpleCache->addKeyValue(object);
+        cache->addKeyValue(object);
     }
-    auto cacheValue = dynamic_cast<CacheValue *>(object);
+    auto cacheValue = dynamic_cast<CacheValue*>(object);
     if (type == LongType) {
         cacheValue->setValue(std::stoll(value));
     } else {
@@ -172,7 +210,7 @@ std::string setKeyValue(Request &rq) {
     }
     // 设置新过期时间
     if (expireTime > 0) {
-        g_simpleCache->setExpire(rq.cmd[1], expireTime);
+        cache->setExpire(rq.cmd[1], expireTime);
     }
     return "ok";
 }
@@ -182,7 +220,11 @@ std::string getKeyValue(Request &rq) {
         return WRONG_REQUEST_FORMAT;
     }
     std::string key = rq.cmd[1];
-    auto object = g_simpleCache->getKeyValue(key);
+    auto cache = getSimpleCache();
+    if (cache->checkLock(key, rq.m_name)) {
+        return KEY_VALUE_IS_LOCKED;
+    }
+    auto object = cache->getKeyValue(key);
     if (!object) {
         return KEY_VALUE_NOT_EXIST;
     }
@@ -191,10 +233,10 @@ std::string getKeyValue(Request &rq) {
     switch (type) {
     case LongType:
         result += std::to_string(
-            dynamic_cast<CacheValue *>(object)->getValue<long long>());
+            dynamic_cast<CacheValue*>(object)->getValue<int64>());
         break;
     case StringType:
-        result += dynamic_cast<CacheValue *>(object)->getValue<std::string>();
+        result += dynamic_cast<CacheValue*>(object)->getValue<std::string>();
         break;
     case ListType:
         result += object->getKey() + " (list)";
@@ -214,11 +256,15 @@ std::string expireKeyValue(Request &rq) {
         return WRONG_REQUEST_FORMAT;
     }
     std::string key = rq.cmd[1];
-    long long time = std::stoll(rq.cmd[2]);
-    if (!g_simpleCache->existKeyValue(key)) {
+    auto cache = getSimpleCache();
+    if (cache->checkLock(key, rq.m_name)) {
+        return KEY_VALUE_IS_LOCKED;
+    }
+    int64 time = std::stoll(rq.cmd[2]);
+    if (!cache->existKeyValue(key)) {
         return KEY_VALUE_NOT_EXIST;
     }
-    g_simpleCache->setExpire(key, time);
+    cache->setExpire(key, time);
     return "ok";
 }
 
@@ -227,10 +273,14 @@ std::string delKeyValue(Request &rq) {
         return WRONG_REQUEST_FORMAT;
     }
     std::string key = rq.cmd[1];
-    if (!g_simpleCache->existKeyValue(key)) {
+    auto cache = getSimpleCache();
+    if (cache->checkLock(key, rq.m_name)) {
+        return KEY_VALUE_IS_LOCKED;
+    }
+    if (!cache->existKeyValue(key)) {
         return KEY_VALUE_NOT_EXIST;
     }
-    g_simpleCache->delKeyValue(key);
+    cache->delKeyValue(key);
     return "ok";
 }
 
@@ -242,16 +292,19 @@ std::string dictSetKeyValue(Request &rq) {
     std::string viceKey = rq.cmd[2];
     std::string value = rq.cmd[3];
     CacheType type = isNum(value) ? LongType : StringType;
-
-    auto object = g_simpleCache->getKeyValue(mainKey);
+    auto cache = getSimpleCache();
+    if (cache->checkLock(mainKey, rq.m_name)) {
+        return KEY_VALUE_IS_LOCKED;
+    }
+    auto object = cache->getKeyValue(mainKey);
     // 对应词典不存在则创建词典，对应对象不是词典类型则返回
     // 不支持的操作
     if (!object)
-        g_simpleCache->addKeyValue(getInstance(mainKey, DictType));
+        cache->addKeyValue(getInstance(mainKey, DictType));
     else if (object->getValueType() != DictType)
         return UNSUPPORTED_OPERATION;
 
-    object = g_simpleCache->getKeyValue(mainKey);
+    object = cache->getKeyValue(mainKey);
     auto dict = dynamic_cast<CacheDict *>(object);
     object = dict->getKeyValue(viceKey);
     if (!object || object->getValueType() != type) {
@@ -273,7 +326,11 @@ std::string dictGetKeyValue(Request &rq) {
     }
     std::string mainKey = rq.cmd[1];
     std::string viceKey = rq.cmd[2];
-    auto object = g_simpleCache->getKeyValue(mainKey);
+    auto cache = getSimpleCache();
+    if (cache->checkLock(mainKey, rq.m_name)) {
+        return KEY_VALUE_IS_LOCKED;
+    }
+    auto object = cache->getKeyValue(mainKey);
     if (!object)
         return KEY_VALUE_NOT_EXIST;
     if (object->getValueType() != DictType)
@@ -288,10 +345,10 @@ std::string dictGetKeyValue(Request &rq) {
     switch (type) {
     case LongType:
         result += std::to_string(
-            dynamic_cast<CacheValue *>(object)->getValue<long long>());
+            dynamic_cast<CacheValue *>(object)->getValue<int64>());
         break;
     case StringType:
-        result += dynamic_cast<CacheValue *>(object)->getValue<std::string>();
+        result += dynamic_cast<CacheValue*>(object)->getValue<std::string>();
         break;
     case ListType:
         result += object->getKey() + " (list)";
@@ -309,7 +366,12 @@ std::string dictDelKeyValue(Request &rq) {
     }
     std::string mainKey = rq.cmd[1];
     std::string viceKey = rq.cmd[2];
-    auto object = g_simpleCache->getKeyValue(mainKey);
+    auto cache = getSimpleCache();
+    if (cache->checkLock(mainKey, rq.m_name)) {
+        return KEY_VALUE_IS_LOCKED;
+    }
+
+    auto object = cache->getKeyValue(mainKey);
     if (!object)
         return KEY_VALUE_NOT_EXIST;
     if (object->getValueType() != DictType)
@@ -336,14 +398,20 @@ std::string listAddKeyValue(Request &rq) {
         value = rq.cmd[2];
     }
     CacheType type = isNum(value) ? LongType : StringType;
+
+    auto cache = getSimpleCache();
+    if (cache->checkLock(mainKey, rq.m_name)) {
+        return KEY_VALUE_IS_LOCKED;
+    }
+
     // 检查对象是否存在以及类型是否匹配
-    auto object = g_simpleCache->getKeyValue(mainKey);
+    auto object = cache->getKeyValue(mainKey);
     if (!object)
-        g_simpleCache->addKeyValue(getInstance(mainKey, ListType));
+        cache->addKeyValue(getInstance(mainKey, ListType));
     else if (object->getValueType() != ListType)
         return UNSUPPORTED_OPERATION;
 
-    object = g_simpleCache->getKeyValue(mainKey);
+    object = cache->getKeyValue(mainKey);
     auto list = dynamic_cast<CacheList *>(object);
 
     object = getInstance(viceKey, type);
@@ -363,12 +431,17 @@ std::string listAddmKeyValue(Request &rq) {
         return WRONG_REQUEST_FORMAT;
     }
     std::string mainKey = rq.cmd[1];
-    auto object = g_simpleCache->getKeyValue(mainKey);
+
+    auto cache = getSimpleCache();
+    if (cache->checkLock(mainKey, rq.m_name)) {
+        return KEY_VALUE_IS_LOCKED;
+    }
+    auto object = cache->getKeyValue(mainKey);
     if (!object)
-        g_simpleCache->addKeyValue(getInstance(mainKey, ListType));
+        cache->addKeyValue(getInstance(mainKey, ListType));
     else if (object->getValueType() != ListType)
         return UNSUPPORTED_OPERATION;
-    object = g_simpleCache->getKeyValue(mainKey);
+    object = cache->getKeyValue(mainKey);
     auto list = dynamic_cast<CacheList *>(object);
     for (long long i = 2; i < rq.cmd.size(); i++) {
         std::string value = rq.cmd[i];
@@ -393,7 +466,12 @@ std::string listPopKeyValue(Request &rq) {
     if (rq.cmd.size() == 3) {
         viceKey = rq.cmd[2];
     }
-    auto object = g_simpleCache->getKeyValue(mainKey);
+    auto cache = getSimpleCache();
+    if (cache->checkLock(mainKey, rq.m_name)) {
+        return KEY_VALUE_IS_LOCKED;
+    }
+
+    auto object = cache->getKeyValue(mainKey);
     if (!object) {
         return KEY_VALUE_NOT_EXIST;
     } else if (object->getValueType() != ListType) {
@@ -441,8 +519,11 @@ std::string listGetKeyValue(Request &rq) {
     if (rq.cmd.size() == 3) {
         viceKey = rq.cmd[2];
     }
-
-    auto object = g_simpleCache->getKeyValue(mainKey);
+    auto cache = getSimpleCache();
+    if (cache->checkLock(mainKey, rq.m_name)) {
+        return KEY_VALUE_IS_LOCKED;
+    }
+    auto object = cache->getKeyValue(mainKey);
     if (!object) {
         return KEY_VALUE_NOT_EXIST;
     } else if (object->getValueType() != ListType) {
@@ -480,7 +561,13 @@ std::string listAllKeyValue(Request &rq) {
         return WRONG_REQUEST_FORMAT;
     }
     std::string key = rq.cmd[1];
-    auto object = g_simpleCache->getKeyValue(key);
+
+    auto cache = getSimpleCache();
+    if (cache->checkLock(key, rq.m_name)) {
+        return KEY_VALUE_IS_LOCKED;
+    }
+
+    auto object = cache->getKeyValue(key);
     if (!object) {
         return KEY_VALUE_NOT_EXIST;
     } else if (object->getValueType() != ListType) {
@@ -510,57 +597,90 @@ std::string listAllKeyValue(Request &rq) {
     return result;
 }
 
-void startServer() {
-    if (!g_simpleCache || !g_requestBuffer || !g_sessionManager) {
-        std::cout
-            << "No simple cache or no request buffer or no session manager."
-            << std::endl;
-        exit(0);
+std::string lockKeyValue(Request& rq) {
+    if (rq.cmd.size() != 2) {
+        return WRONG_REQUEST_FORMAT;
     }
-    std::map<std::string, std::string (*)(Request &)> funcs = {
+    auto key = rq.cmd[1];
+    auto cache = getSimpleCache();
+    if (cache->checkLock(key, rq.m_name)) {
+        return KEY_VALUE_IS_LOCKED;
+    }
+    cache->setLock(key, rq.m_name);
+    return "ok";
+}
+
+std::string unlockKeyValue(Request& rq) {
+    if (rq.cmd.size() != 2) {
+        return WRONG_REQUEST_FORMAT;
+    }
+    auto key = rq.cmd[1];
+    auto cache = getSimpleCache();
+    if (cache->checkLock(key, rq.m_name)) {
+        return KEY_VALUE_IS_LOCKED;
+    }
+    cache->delLock(rq.cmd[1]);
+    return "ok";
+}
+
+SimpleCache* getSimpleCache() {
+    static SimpleCache* cache = new SimpleCache();
+    return cache;
+}
+
+void delSimpleCache() {
+    delete getSimpleCache();
+}
+
+void startServer() {
+    std::map<std::string, std::string(*)(Request &)> funcs = {
         {SET_COMMAND, setKeyValue},        {GET_COMMAND, getKeyValue},
         {EXPIRE_COMMAND, expireKeyValue},  {DEL_COMMAND, delKeyValue},
         {DSET_COMMAND, dictSetKeyValue},   {DGET_COMMAND, dictGetKeyValue},
         {DDEL_COMMAND, dictDelKeyValue},   {LADD_COMMAND, listAddKeyValue},
         {LADDM_COMMAND, listAddmKeyValue}, {LPOP_COMMAND, listPopKeyValue},
-        {LGET_COMMAND, listGetKeyValue},   {LALL_COMMAND, listAllKeyValue}};
+        {LGET_COMMAND, listGetKeyValue},   {LALL_COMMAND, listAllKeyValue},
+        {LOCK_COMMAND, lockKeyValue},      {UNLOCK_COMMAND, unlockKeyValue}};
+
+    auto requestBuffer = getRequestBuffer();
+    auto simpleCache = getSimpleCache();
+    auto sessionManager = getSessionManager();
+    std::cout << "Server task is started." << std::endl;
     while (true) {
-        Request rq = g_requestBuffer->getRequest();
+        Request rq = requestBuffer->getRequest();
         // 确保待删除的key-value确实过期
         if (rq.m_name == EXPIRE_TASK) {
-            if (!g_simpleCache->checkExpire(rq.cmd[1])) {
+            if (!simpleCache->checkExpire(rq.cmd[1])) {
                 continue;
             }
         }
         if (funcs.find(rq.cmd[0]) == funcs.end()) {
-            g_sessionManager->async_send(rq.m_name, WRONG_REQUEST_COMMAND);
+            sessionManager->async_send(rq.m_name, WRONG_REQUEST_COMMAND);
             continue;
         }
         std::string (*func)(Request &) = funcs[rq.cmd[0]];
         auto result = func(rq);
-        g_sessionManager->async_send(rq.m_name, result);
+        sessionManager->async_send(rq.m_name, result);
     }
+    std::cout << "Server task is closed." << std::endl;
 }
 
 void startExpire() {
-    if (!g_simpleCache || !g_requestBuffer || !g_sessionManager) {
-        std::cout
-            << "No simple cache or no request buffer or no session manager."
-            << std::endl;
-        exit(0);
-    }
     long long checkNumber = 10000;
-    checkNumber = std::max(checkNumber, g_simpleCache->getSize());
-    auto listHead = g_simpleCache->getHead();
+    auto simpleCache = getSimpleCache();
+    auto globalConfig = getGlobalConfig();
+    checkNumber = std::max(checkNumber, simpleCache->getSize());
+    auto listHead = simpleCache->getHead();
+    std::cout << "Expire task is started." << std::endl;
     while (true) {
         std::this_thread::sleep_for(
-            std::chrono::milliseconds(g_simpleCache->getExpireCycle()));
+            std::chrono::milliseconds(globalConfig->expireCycle));
 
-        auto tempNode = g_simpleCache->getTail();
+        auto tempNode = simpleCache->getTail();
         auto tempNumber = checkNumber;
         while (tempNumber > 0 && tempNode && tempNode != listHead) {
             auto expireKey = tempNode->getValue()->getKey();
-            if (g_simpleCache->checkExpire(expireKey)) {
+            if (simpleCache->checkExpire(expireKey)) {
                 Request rq;
                 rq.m_name = EXPIRE_TASK;
                 rq.cmd.push_back("del " + expireKey);
@@ -570,4 +690,5 @@ void startExpire() {
             tempNode = tempNode->getPrev();
         }
     }
+    std::cout << "Expire task is closed." << std::endl;
 }

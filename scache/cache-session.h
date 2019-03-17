@@ -9,39 +9,38 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include "cache-config.h"
 
 using TcpSocket = boost::asio::ip::tcp::socket;
 using Acceptor = boost::asio::ip::tcp::acceptor;
-using EndPoint = boost::asio::ip::tcp::endpoint;
+using Endpoint = boost::asio::ip::tcp::endpoint;
 using Address = boost::asio::ip::address;
 using IOService = boost::asio::io_service;
-using TimePoint = std::chrono::time_point<std::chrono::system_clock,
-                                          std::chrono::milliseconds>;
 using DeadTimer = boost::asio::deadline_timer;
 
-using Handler = void (*)(std::string &, std::string &);
+using Handler = void (*)(std::string&, std::string&);
 
 class Session {
-  private:
-    TcpSocket m_sock;
+private:
+    TcpSocket m_tcpSocket;
     std::string m_buffer;
     std::string m_name;
 
     DeadTimer m_deadTimer;
 
+    GlobalConfig* m_globalConfig;
+
     Handler m_sendHandler;
     Handler m_recvHandler;
     Handler m_shutHandler;
 
-    long long m_sessionDuration;
-    long long m_lastAccess;
+    int64 m_lastAccess;
 
-    void setDeadTimer(long long time);
+    void setDeadTimer(int64 time);
 
-  public:
-    Session(TcpSocket sock, size_t bufferSize,
-            long long sessionDuration = 1200000);
-    ~Session();
+public:
+    Session(TcpSocket sock);
+    virtual ~Session();
     void async_recv();
     void aysnc_send(const std::string &result);
     void setSendHandler(Handler handler);
@@ -53,28 +52,38 @@ class Session {
 
 class SessionManager {
   private:
-    std::unordered_map<std::string, Session *> m_sockMap;
-    IOService m_io;
-    Acceptor m_acceptor;
-    TcpSocket m_sock;
-    std::mutex m_lock;
-    long long m_sessionDuration;
+    std::unordered_map<std::string, Session*> m_sessionTable;
+    std::mutex m_sessionTableLock;
 
-  public:
-    SessionManager(short port, long long sessionDuration);
-    ~SessionManager();
+    GlobalConfig* m_globalConfig;
 
+    Endpoint  m_endpoint;
+    IOService m_ioService;
+    Acceptor  m_acceptor;
+    TcpSocket m_tcpSocket;
+
+    SessionManager();
+    virtual ~SessionManager();
+
+public:
     void runManager();
 
-    void async_send(std::string &name, const std::string &result);
+    void async_send(const std::string &name, const std::string &result);
 
-    long long getSessionCount();
-    long long getSessionDuration();
+    int64 getSessionCount();
 
-    void shutSession(std::string &peer);
+    void shutSession(const std::string &peer);
+
+    friend SessionManager* getSessionManager();
+    friend void delSessionManager();
 
   private:
     void async_accept();
 };
+
+SessionManager* getSessionManager();
+void delSessionManager();
+
+inline int64 getCurrentTime();
 
 void startSession();

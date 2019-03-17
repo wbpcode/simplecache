@@ -27,7 +27,7 @@ class CacheDict : public CacheContainer {
     long long getSize();
 
     friend CacheObject *getInstance(std::string key, CacheType valueType);
-    friend void destoryInstance(CacheObject *o);
+    friend void delInstance(CacheObject *o);
 };
 
 class LinkedDict : public CacheContainer {
@@ -60,5 +60,5 @@ class LinkedDict : public CacheContainer {
     CacheListNode *getTail();
 
     friend CacheObject *getInstance(std::string key, CacheType valueType);
-    friend void destoryInstance(CacheObject *o);
+    friend void delInstance(CacheObject *o);
 };

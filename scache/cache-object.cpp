@@ -35,7 +35,7 @@ CacheObject *getInstance(std::string key, CacheType valueType) {
     return nullptr;
 }
 
-void destoryInstance(CacheObject *o) {
+void delInstance(CacheObject *o) {
     if (o)
         delete o;
 }

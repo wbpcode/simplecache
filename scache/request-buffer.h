@@ -5,6 +5,7 @@
 #include <queue>
 #include <string>
 #include <vector>
+#include "cache-config.h"
 
 struct Request {
     std::string m_name;
@@ -12,19 +13,24 @@ struct Request {
 };
 
 class RequestBuffer {
-  private:
+private:
     std::queue<Request> m_buffer;
     std::mutex m_lock;
     std::condition_variable m_addCond;
     std::condition_variable m_getCond;
-    long long m_maxSize;
 
-  public:
-    RequestBuffer(long long maxBufferSize);
-    virtual ~RequestBuffer() { ; }
+    GlobalConfig* m_globalConfig;
+
+    RequestBuffer();
+    virtual ~RequestBuffer() = default;
+
+public:
     void addRequest(Request &rq);
     Request getRequest();
-    void setMaxSize(long long maxSize);
-    long long getMaxSize();
-    long long getSize();
+
+    friend RequestBuffer* getRequestBuffer();
+    friend void delRequestBuffer();
 };
+
+RequestBuffer* getRequestBuffer();
+void delRequestBuffer();

@@ -20,7 +20,7 @@ class CacheObject {
     std::string getKey();
     CacheType getValueType();
 
-    friend void destoryInstance(CacheObject *o);
+    friend void delInstance(CacheObject *o);
 };
 
 class CacheValue : public CacheObject {
@@ -40,7 +40,7 @@ class CacheValue : public CacheObject {
     template <class T> void setValue(T value);
 
     friend CacheObject *getInstance(std::string key, CacheType valueType);
-    friend void destoryInstance(CacheObject *o);
+    friend void delInstance(CacheObject *o);
 };
 
 template <class T> T &CacheValue::getValue() {
@@ -71,8 +71,8 @@ class CacheContainer : public CacheObject {
     virtual CacheObject *getKeyValue(std::string key) = 0;
     virtual void delKeyValue(std::string key) = 0;
 
-    friend void destoryInstance(CacheObject *o);
+    friend void delInstance(CacheObject *o);
 };
 
 CacheObject *getInstance(std::string key, CacheType valueType);
-void destoryInstance(CacheObject *o);
+void delInstance(CacheObject *o);

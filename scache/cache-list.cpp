@@ -16,7 +16,7 @@ CacheObject *CacheListNode::getValue() { return m_value; }
 // 弹出一个节点时:节点本身可能会被销毁，但是对应的CacheObject可能需要保留
 // 删除一个节点时:需要同时销毁保存的CacheObject
 // 所以提供一个函数显式销毁所管理的CacheObject
-void CacheListNode::destoryValue() { destoryInstance(m_value); }
+void CacheListNode::destoryValue() { delInstance(m_value); }
 
 // 根据key搜索
 CacheListNode *CacheList::getNode(std::string key) {

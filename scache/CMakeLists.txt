@@ -5,8 +5,6 @@ cmake_minimum_required (VERSION 3.8)
 
 if(WIN32)
 set(BOOST_ROOT "C:/boost_1_69_0/")
-set(Boost_LIBRARIES "C:/boost_1_69_0/stage/lib")
-set(BOOST_LIBRARYDIR "C:/boost_1_69_0/stage/lib")
 endif()
 
 set(Boost_USE_STATIC_LIBS ON)
@@ -23,6 +21,8 @@ include_directories(${Boost_INCLUDE_DIRS})
 # 将源代码添加到此项目的可执行文件。
 add_executable (scache 
     "simple-cache.cpp" 
+    "cache-config.cpp"
+    "cache-config.h"
     "cache-object.h" 
     "cache-object.cpp" 
     "cache-dict.h" 

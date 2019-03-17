@@ -11,7 +11,7 @@ void CacheDict::addKeyValue(CacheObject *o) {
         old = m_map[key];
     }
     m_map[key] = o;
-    destoryInstance(old);
+    delInstance(old);
 }
 
 CacheObject *CacheDict::getKeyValue(std::string key) {
@@ -27,7 +27,7 @@ void CacheDict::delKeyValue(std::string key) {
         return;
     auto value = m_map[key];
     m_map.erase(key);
-    destoryInstance(value);
+    delInstance(value);
 }
 
 bool CacheDict::existKeyValue(std::string key) {
@@ -39,7 +39,7 @@ bool CacheDict::existKeyValue(std::string key) {
 
 CacheDict::~CacheDict() {
     for (auto &e : m_map) {
-        destoryInstance(e.second);
+        delInstance(e.second);
     }
 }
 
@@ -51,7 +51,7 @@ LinkedDict::LinkedDict(std::string key, CacheType valueType)
         dynamic_cast<CacheList *>(getInstance(key + ":myCacheList", ListType));
 }
 
-LinkedDict::~LinkedDict() { destoryInstance(m_list); }
+LinkedDict::~LinkedDict() { delInstance(m_list); }
 
 void LinkedDict::addKeyValue(CacheObject *o) {
     CacheListNode *node = nullptr;
@@ -61,7 +61,7 @@ void LinkedDict::addKeyValue(CacheObject *o) {
     if (node) {
         CacheObject *old = node->getValue();
         node->setValue(o);
-        destoryInstance(old);
+        delInstance(old);
         return;
     }
     node = new CacheListNode(o);

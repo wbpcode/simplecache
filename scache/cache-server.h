@@ -1,8 +1,9 @@
 #pragma once
 #include "cache-dict.h"
 #include "cache-config.h"
+#include <mutex>
 
-class CacheExpireTable {
+class CacheExpireDict {
   private:
     std::unordered_map<std::string, int64> m_map;
   public:
@@ -11,18 +12,18 @@ class CacheExpireTable {
     bool checkExpire(std::string &key);
 };
 
-class CacheLock {
-public:
+struct CacheClientLock {
     std::string m_name;
     int64 m_expireTime;
-    CacheLock(std::string& name, int64 time);
-    CacheLock() = default;
-    virtual ~CacheLock() = default;
+    CacheClientLock(std::string& name, int64 time) : 
+        m_name(name), m_expireTime(time) { ; }
+    CacheClientLock() = default;
+    virtual ~CacheClientLock() = default;
 };
 
-class CacheLockTable {
+class CacheClientLockDict {
 private:
-    std::unordered_map<std::string, CacheLock> m_map;
+    std::unordered_map<std::string, CacheClientLock> m_map;
 public:
     void set(std::string &key, std::string &m_name, int64 time);
     void del(std::string &key);
@@ -31,12 +32,15 @@ public:
 
 class SimpleCache : public LinkedDict {
   private:
-    CacheExpireTable *m_expireTable;
-    CacheLockTable* m_lockTable;
+    CacheExpireDict* m_cacheExpireDict;
+    CacheClientLockDict* m_cacheClientLockDict;
+
     GlobalConfig* m_globalConfig;
 
-    SimpleCache();
+    std::mutex m_lock;
+
     virtual ~SimpleCache();
+    SimpleCache();
 
   public:
     virtual void addKeyValue(CacheObject *o);
@@ -50,6 +54,9 @@ class SimpleCache : public LinkedDict {
     void setLock(std::string &key, std::string &name);
     bool checkLock(std::string &key, std::string &name);
     void delLock(std::string &key);
+
+    void lock();
+    void unlock();
 
     friend SimpleCache* getSimpleCache();
     friend void delSimpleCache();

@@ -35,40 +35,35 @@ const std::string KEY_VALUE_IS_LOCKED = "error key-value is locked";
 // 标志过期时间任务
 const std::string EXPIRE_TASK = "expireTask";
 
-void CacheExpireTable::set(std::string &key, int64 time) {
+void CacheExpireDict::set(std::string &key, int64 time) {
     m_map[key] = getCurrentTime() + time;
 }
-void CacheExpireTable::del(std::string &key) {
+void CacheExpireDict::del(std::string &key) {
     if (m_map.find(key) == m_map.end()) {
         return;
     }
     m_map.erase(key);
 }
 
-bool CacheExpireTable::checkExpire(std::string &key) {
+bool CacheExpireDict::checkExpire(std::string &key) {
     if (m_map.find(key) == m_map.end()) {
         return false;
     }
     return getCurrentTime() >= m_map[key];
 }
 
-CacheLock::CacheLock(std::string &name, int64 time) :
-    m_name(name), m_expireTime(time) {
-    ;
+void CacheClientLockDict::set(std::string &key, std::string &name, int64 time) {
+    m_map[key] = CacheClientLock(name, getCurrentTime() + time);
 }
 
-void CacheLockTable::set(std::string &key, std::string &name, int64 time) {
-    m_map[key] = CacheLock(name, getCurrentTime() + time);
-}
-
-void CacheLockTable::del(std::string &key) {
+void CacheClientLockDict::del(std::string &key) {
     if (m_map.find(key) == m_map.end()) {
         return;
     }
     m_map.erase(key);
 }
 
-bool CacheLockTable::checkLock(std::string &key, std::string &name) {
+bool CacheClientLockDict::checkLock(std::string &key, std::string &name) {
     if (m_map.find(key) == m_map.end()) {
         return false;
     }
@@ -84,13 +79,18 @@ bool CacheLockTable::checkLock(std::string &key, std::string &name) {
 }
 
 
-SimpleCache::~SimpleCache() { delete m_expireTable; delete m_lockTable; }
+SimpleCache::~SimpleCache() { delete m_cacheExpireDict; delete m_cacheClientLockDict; }
 
 SimpleCache::SimpleCache() : LinkedDict("mySimpleCache",LinkType) {
-    m_expireTable = new CacheExpireTable();
-    m_lockTable = new CacheLockTable();
+    m_cacheExpireDict = new CacheExpireDict();
+    m_cacheClientLockDict = new CacheClientLockDict();
     m_globalConfig = getGlobalConfig();
 }
+
+
+void SimpleCache::lock() { m_lock.lock(); }
+
+void SimpleCache::unlock() { m_lock.unlock(); }
 
 void SimpleCache::addKeyValue(CacheObject *o) {
     // 注意区分m_list的成员函数popNode和继承自
@@ -109,7 +109,7 @@ void SimpleCache::addKeyValue(CacheObject *o) {
     }
     m_list->addNode(node);
     // 处理过期时间以及超出上限的key-value对
-    m_expireTable->del(key);
+    m_cacheExpireDict->del(key);
     if (getSize() > m_globalConfig->maxCacheSize) {
         auto v = getTail()->getValue()->getKey();
         delKeyValue(v);
@@ -120,11 +120,11 @@ CacheObject *SimpleCache::getKeyValue(std::string key) {
     if (m_map.find(key) == m_map.end()) {
         return nullptr;
     }
-    if (m_expireTable->checkExpire(key)) {
+    if (m_cacheExpireDict->checkExpire(key)) {
         delKeyValue(key);
         return nullptr;
     }
-    m_expireTable->del(key);
+    m_cacheExpireDict->del(key);
     auto node = m_map[key];
     m_list->popNode(node);
     m_list->addNode(node);
@@ -135,27 +135,27 @@ void SimpleCache::delKeyValue(std::string key) {
     auto node = popNode(key);
     node->destoryValue();
     delete node;
-    m_expireTable->del(key);
+    m_cacheExpireDict->del(key);
 }
 
 void SimpleCache::setExpire(std::string &key, int64 time) {
-    m_expireTable->set(key, time);
+    m_cacheExpireDict->set(key, time);
 }
 bool SimpleCache::checkExpire(std::string &key) {
-    return m_expireTable->checkExpire(key);
+    return m_cacheExpireDict->checkExpire(key);
 }
 void SimpleCache::delExpire(std::string &key) { 
-    m_expireTable->del(key); 
+    m_cacheExpireDict->del(key); 
 }
 
 void SimpleCache::setLock(std::string &key, std::string &name) {
-    m_lockTable->set(key, name, m_globalConfig->lockDuration);
+    m_cacheClientLockDict->set(key, name, m_globalConfig->lockDuration);
 }
 bool SimpleCache::checkLock(std::string &key,std::string &name) {
-    return m_lockTable->checkLock(key, name);
+    return m_cacheClientLockDict->checkLock(key, name);
 }
 void SimpleCache::delLock(std::string &key) {
-    m_lockTable->del(key);
+    m_cacheClientLockDict->del(key);
 }
 
 bool isNum(std::string str) {
@@ -659,14 +659,17 @@ void startServer() {
             continue;
         }
         std::string (*func)(Request &) = funcs[rq.cmd[0]];
+        auto cache = getSimpleCache();
+        cache->lock();
         auto result = func(rq);
+        cache->unlock();
         sessionManager->async_send(rq.m_name, result);
     }
     std::cout << "Server task is closed." << std::endl;
 }
 
 void startExpire() {
-    long long checkNumber = 10000;
+    int64 checkNumber = 1000;
     auto simpleCache = getSimpleCache();
     auto globalConfig = getGlobalConfig();
     checkNumber = std::max(checkNumber, simpleCache->getSize());
@@ -675,7 +678,7 @@ void startExpire() {
     while (true) {
         std::this_thread::sleep_for(
             std::chrono::milliseconds(globalConfig->expireCycle));
-
+        simpleCache->lock();
         auto tempNode = simpleCache->getTail();
         auto tempNumber = checkNumber;
         while (tempNumber > 0 && tempNode && tempNode != listHead) {
@@ -685,10 +688,12 @@ void startExpire() {
                 rq.m_name = EXPIRE_TASK;
                 rq.cmd.push_back("del " + expireKey);
             }
+            simpleCache->checkLock(expireKey);
 
             tempNumber--;
             tempNode = tempNode->getPrev();
         }
+        simpleCache->unlock();
     }
     std::cout << "Expire task is closed." << std::endl;
 }

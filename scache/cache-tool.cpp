@@ -12,7 +12,7 @@ bool isNumber(std::string str) {
     else             return true; 
 }
 
-inline int64 getCurrentTime() {
+int64 getCurrentTime() {
     return std::chrono::time_point_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now())
         .time_since_epoch()

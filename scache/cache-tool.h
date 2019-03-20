@@ -9,4 +9,4 @@ using int64 = long long;
 
 bool isNumber(std::string);
 
-inline int64 getCurrentTime();
+int64 getCurrentTime();

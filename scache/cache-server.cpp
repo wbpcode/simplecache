@@ -75,7 +75,11 @@ void SimpleCache::set(std::string& key, CacheBase* value) {
     }
     catch(std::string e){
         // key不存在：插入新pair
-        m_cacheTable->set({key, CacheListNode<CacheBase*>(value)});
+        auto temp = PairType {
+            key,
+            CacheListNode<CacheBase*>(value)
+        };
+        m_cacheTable->set(temp);
         // 获取实际存储的pair的引用并提取其中value部分(ListNode部分)的指针
         // 将新Node插入到链表中
         PairType& pair = m_cacheTable->get(key);
@@ -128,13 +132,20 @@ SimpleCache::NodeType* SimpleCache::getTail() {
 }
 
 int64 SimpleCache::walk(std::function<void(const NodeType*)> func, 
-    int64 maxSize = LLONG_MAX) {
-    m_linkedList->walk(func, maxSize, false);
+    int64 maxSize) {
+    return m_linkedList->walk(func, maxSize, false);
 }
 
 void SimpleCache::setClientLock(std::string& key, std::string& name) {
     int64 time = getCurrentTime() + m_globalConfig->lockDuration;
-    m_clientLockTable->set({ key,{name,time} });
+    auto pair = CachePair<std::string, ClientLock>{
+        key,
+        ClientLock {
+            name,
+            time,
+        }
+    };
+    m_clientLockTable->set(pair);
 }
 
 void SimpleCache::delClientLock(std::string& key) {
@@ -162,7 +173,11 @@ bool SimpleCache::getClientLock(std::string& key, std::string& name) {
 
 void SimpleCache::setExpire(std::string& key, int64 time) {
     time += getCurrentTime();
-    m_expireTable->set({ key,time });
+    auto pair = CachePair<std::string, int64>{
+        key,
+        time
+    };
+    m_expireTable->set(pair);
 }
 
 void SimpleCache::delExpire(std::string& key) {
@@ -330,7 +345,11 @@ std::string dictSetKeyValueHandler(Request &rq) {
         pair.m_two = temp;
     }
     catch(std::string e){
-        dict->set({ viceKey,temp });
+        auto pair = CachePair<std::string, CacheValue*>{
+            viceKey,
+            temp
+        };
+        dict->set(pair);
     }
 
     return "ok";
@@ -457,6 +476,7 @@ std::string listPopKeyValueHandler(Request &rq) {
         auto temp = list->pop();
         std::string result = "ok " + temp->getValue();
         delInstance(temp);
+        return result;
     }
     catch(std::string e){
         return CONTAINER_IS_EMPTY;
@@ -589,13 +609,16 @@ void startServer() {
         {GET_COMMAND, getKeyValueHandler},
         {EXPIRE_COMMAND, expireKeyValueHandler},  
         {DEL_COMMAND, delKeyValueHandler},
+
         {DSET_COMMAND, dictSetKeyValueHandler},   
         {DGET_COMMAND, dictGetKeyValueHandler},
-        {DDEL_COMMAND, dictDelKeyValueHandler},   
+        {DDEL_COMMAND, dictDelKeyValueHandler},
+
         {LADD_COMMAND, listAddKeyValueHandler},
         {LPOP_COMMAND, listPopKeyValueHandler},   
         {LGET_COMMAND, listGetKeyValueHandler},   
-        {LALL_COMMAND, listAllKeyValueHandler},   
+        {LALL_COMMAND, listAllKeyValueHandler},  
+
         {LOCK_COMMAND, lockKeyValueHandler},      
         {UNLOCK_COMMAND, unlockKeyValueHandler}};
 

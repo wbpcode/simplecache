@@ -1,5 +1,6 @@
 #include "cache-session.h"
 #include "request-buffer.h"
+#include "cache-tool.h"
 #include <boost/bind.hpp>
 #include <regex>
 #include <iostream>

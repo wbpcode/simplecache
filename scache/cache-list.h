@@ -22,7 +22,8 @@ public:
     NodeType *getPrev() const { return m_prev; }
 
     void setValue(ValueType v) { m_value = v; }
-    ValueType& getValue() const { return m_value; }
+    const ValueType& getValue() const { return m_value; }
+    ValueType& getValue() { return m_value; }
 
     CacheListNode() = default;
     CacheListNode(ValueType& v) : m_value(v) { ; }
@@ -116,7 +117,7 @@ public:
     ValueType pop(NodeType* node = nullptr) {
         node = popNode(node);
         if (!node) {
-            throw "Try pop null list.";
+            throw std::string("Try pop empty list.");
         }
         ValueType temp = node->getValue();
        

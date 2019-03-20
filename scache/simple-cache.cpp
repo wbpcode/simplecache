@@ -1,9 +1,13 @@
-﻿#include "cache-session.h"
+#include "cache-session.h"
 #include "cache-config.h"
 #include "cache-server.h"
 #include "request-buffer.h"
 #include <iostream>
 #include <thread>
+#include <algorithm>
+#include "cache-base.h"
+#include "cache-dict.h"
+#include "cache-list.h"
 
 int main(int argc, char **argv) {
     initGlobalConfig(argc, argv);

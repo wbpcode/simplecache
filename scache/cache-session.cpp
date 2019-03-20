@@ -174,13 +174,6 @@ void SessionManager::shutSession(const std::string &peer) {
     m_sessionTable.erase(peer);
 }
 
-inline int64 getCurrentTime() {
-    return std::chrono::time_point_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now())
-        .time_since_epoch()
-        .count();
-}
-
 SessionManager* getSessionManager() {
     static SessionManager* manager = new SessionManager();
     return manager;

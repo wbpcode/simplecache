@@ -1,62 +1,54 @@
 #pragma once
-#include "cache-dict.h"
 #include "cache-config.h"
-#include <mutex>
+#include "cache-dict.h"
+#include "cache-list.h"
+#include "cache-base.h"
 
-class CacheExpireDict {
-  private:
-    std::unordered_map<std::string, int64> m_map;
-  public:
-    void set(std::string &key, int64 time);
-    void del(std::string &key);
-    bool checkExpire(std::string &key);
-};
-
-struct CacheClientLock {
-    std::string m_name;
-    int64 m_expireTime;
-    CacheClientLock(std::string& name, int64 time) : 
-        m_name(name), m_expireTime(time) { ; }
-    CacheClientLock() = default;
-    virtual ~CacheClientLock() = default;
-};
-
-class CacheClientLockDict {
-private:
-    std::unordered_map<std::string, CacheClientLock> m_map;
+class SimpleCache {
 public:
-    void set(std::string &key, std::string &m_name, int64 time);
-    void del(std::string &key);
-    bool checkLock(std::string &key, std::string &m_name);
-};
+    using ClientLock = struct {
+        std::string m_name;
+        int64 m_expireTime;
+    };
+    using CacheTable = CacheDict<std::string, CacheListNode<CacheBase*>>;
+    using ExpireTable = CacheDict<std::string, int64>;
+    using ClientLockTable = CacheDict<std::string, ClientLock>;
+    using LinkedList = CacheList<CacheBase*>;
+    using PairType = CachePair<std::string, CacheListNode<CacheBase*>>;
+    using NodeType = CacheListNode<CacheBase*>;
 
-class SimpleCache : public LinkedDict {
-  private:
-    CacheExpireDict* m_cacheExpireDict;
-    CacheClientLockDict* m_cacheClientLockDict;
-
+private:
+    ExpireTable* m_expireTable;
+    ClientLockTable* m_clientLockTable;
+    LinkedList* m_linkedList;
+    CacheTable* m_cacheTable;
     GlobalConfig* m_globalConfig;
 
-    std::mutex m_lock;
+    std::mutex m_simpleCacheLock;
 
-    virtual ~SimpleCache();
     SimpleCache();
+    virtual ~SimpleCache();
 
-  public:
-    virtual void addKeyValue(CacheObject *o);
-    virtual CacheObject *getKeyValue(std::string key);
-    virtual void delKeyValue(std::string key);
+public:
+    void set(std::string &key, CacheBase* value);
+    CacheBase* get(std::string &key);
+    void del(std::string &key);
+    bool has(std::string &key);
 
-    void setExpire(std::string &key, int64 time);
-    bool checkExpire(std::string &key);
-    void delExpire(std::string &key);
+    int64 getSize();
+    NodeType* getHead();
+    NodeType* getTail();
+    
+    int64 walk(std::function<void(const NodeType*)> func,
+        int64 maxSize = LLONG_MAX);
 
-    void setLock(std::string &key, std::string &name);
-    bool checkLock(std::string &key, std::string &name);
-    void delLock(std::string &key);
+    void setClientLock(std::string& key, std::string& name);
+    void delClientLock(std::string& key);
+    bool getClientLock(std::string& key, std::string& name);
 
-    void lock();
-    void unlock();
+    void setExpire(std::string& key, int64 time);
+    void delExpire(std::string& key);
+    bool getExpire(std::string& key);
 
     friend SimpleCache* getSimpleCache();
     friend void delSimpleCache();

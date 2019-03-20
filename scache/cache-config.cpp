@@ -27,6 +27,9 @@ void initGlobalConfig(int argc, char** argv) {
         ("expireCycle,c", 
             bpo::value<int64>(&config->expireCycle)->default_value(15000),
             "The period(ms) in which the key-value is checked for expiration.")
+        ("expireCount,t",
+            bpo::value<int64>(&config->expireCount)->default_value(1000),
+            "The maximum number of key-value that be checked in a cycle.")
         ("requestBufferSize,b", 
             bpo::value<int64>(&config->requestBufferSize)->default_value(20000),
             "The maximum number of requests that can be buffered.")

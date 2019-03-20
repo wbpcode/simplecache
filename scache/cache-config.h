@@ -15,7 +15,8 @@ private:
 public:
     int16 listeningPort = 2333;
     int64 maxCacheSize = 1000000; // 个
-    int64 expireCycle = 25000; // ms
+    int64 expireCycle = 15000; // ms
+    int64 expireCount = 1000; // 个
     int64 requestBufferSize = 20000; // 个
     int64 sessionBufferSize = 4096; // byte
     int64 sessionDuration = 1200000; // ms

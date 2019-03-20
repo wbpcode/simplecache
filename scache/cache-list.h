@@ -1,54 +1,154 @@
 #pragma once
-#include "cache-object.h"
+#include "cache-base.h"
+#include <functional>
+#include <climits>
 
+template<class T>
 class CacheListNode {
-  private:
-    CacheListNode *m_next;
-    CacheListNode *m_prev;
-    CacheObject *m_value;
+public:
+    using ValueType = T;
+    using NodeType = CacheListNode<ValueType>;
 
-  public:
-    void setNext(CacheListNode *next);
-    CacheListNode *getNext();
+private:
+    NodeType *m_next;
+    NodeType *m_prev;
+    ValueType m_value;
 
-    void setPrev(CacheListNode *prev);
-    CacheListNode *getPrev();
+public:
+    void setNext(NodeType *next) { m_next = next; }
+    NodeType *getNext() const { return m_next; }
 
-    void setValue(CacheObject *value);
-    CacheObject *getValue();
+    void setPrev(NodeType *prev) { m_prev = prev; }
+    NodeType *getPrev() const { return m_prev; }
+
+    void setValue(ValueType v) { m_value = v; }
+    ValueType& getValue() const { return m_value; }
 
     CacheListNode() = default;
-    CacheListNode(CacheObject *value) : m_value(value) { ; }
-
-    void destoryValue();
+    CacheListNode(ValueType& v) : m_value(v) { ; }
 };
 
-class CacheList : public CacheContainer {
-  private:
-    long long m_size = 0;
-    CacheListNode *m_head = nullptr;
-    CacheListNode *m_tail = nullptr;
+template<class T>
+class CacheList : public CacheBase {
+public:
+    using ValueType = T;
+    using NodeType = CacheListNode<ValueType>;
 
-  protected:
-    CacheList(std::string key, CacheType valueType = ListType);
-    virtual ~CacheList();
+private:
+    int64 m_size = 0;
+    NodeType *m_head = nullptr;
+    NodeType *m_tail = nullptr;
 
-  public:
-    virtual void addKeyValue(CacheObject *o);
-    virtual CacheObject *getKeyValue(std::string key);
-    virtual void delKeyValue(std::string key);
+public:
+    CacheList() :CacheBase(ListType) { 
+        m_head = new NodeType();
+        m_head->setNext(nullptr);
+        m_head->setPrev(nullptr);
+        m_tail = nullptr;
+    }
 
-    // addKeyValue浼氭柊寤鸿妭鐐硅�宎ddNode涓嶄細
-    CacheListNode *addNode(CacheListNode *node, CacheListNode *pos = nullptr);
-    // getKeyValue浼氳幏鍙朇acheObject鑰実etNode鐩存帴杩斿洖鑺傜偣
-    CacheListNode *getNode(std::string key);
-    // delKeyvalue浼氶攢姣佽妭鐐硅�宲opNode涓嶄細
-    CacheListNode *popNode(CacheListNode *node = nullptr);
+    virtual ~CacheList() {
+        NodeType *temp = m_head;
+        NodeType *next = nullptr;
+        while (next = temp->getNext()) {
+            delete temp;
+            temp = next;
+        }
+        delete temp;
+    }
 
-    CacheListNode *getHead();
-    CacheListNode *getTail();
-    long long getSize();
 
-    friend CacheObject *getInstance(std::string key, CacheType valueType);
-    friend void delInstance(CacheObject *o);
+    void addNode(NodeType *node, NodeType *pos = nullptr) {
+        if (!pos)
+            pos = m_head; // 若没有指定位置，默认从头部插入
+        auto temp = pos->getNext();
+
+        pos->setNext(node);
+        node->setPrev(pos);
+
+        if (!temp) {
+            node->setNext(temp);
+            m_tail = node;
+        }
+        else {
+            node->setNext(temp);
+            temp->setPrev(node);
+        }
+        m_size++;
+    }
+
+    // 新建节点，添加到列表中，并返回该节点指针
+    NodeType* add(ValueType& value) {
+        auto node = new NodeType(value);
+        addNode(node);
+        return node;
+    }
+
+
+    template<class K>
+    NodeType* getNode(K& t, std::function<bool(K&, NodeType*)> comp) {
+        NodeType *temp = m_head->getNext();
+        while (temp) {
+            if (comp(t, temp)) return temp;
+            temp = temp->getNext();
+        }
+        return nullptr;
+    }
+
+    NodeType* popNode(NodeType* node = nullptr) {
+        if (m_size <= 0)
+            return nullptr;
+        // 默认从尾部弹出节点
+        if (!node)
+            node = m_tail;
+        auto prev = node->getPrev();
+        auto next = node->getNext();
+
+        prev->setNext(next);
+        if (next)
+            next->setPrev(prev);
+        else
+            m_tail = prev;
+        m_size--;
+        return node;
+    }
+
+    ValueType pop(NodeType* node = nullptr) {
+        node = popNode(node);
+        if (!node) {
+            throw "Try pop null list.";
+        }
+        ValueType temp = node->getValue();
+       
+        delete node;
+        return temp;
+    }
+
+    int64 walk(std::function<void(const NodeType*)> func, int64 maxSize = LLONG_MAX,
+        bool headToTail = true) {
+        if (headToTail) {
+            int64 count = 0;
+            NodeType* temp = m_head->getNext();
+            while (temp && count < maxSize) {
+                func(temp);
+                temp = temp->getNext();
+                ++count;
+            }
+            return count;
+        }
+        else {
+            int64 count = 0;
+            NodeType* temp = m_tail;
+            while (temp && count < maxSize) {
+                func(temp);
+                temp = temp->getPrev();
+                ++count;
+            }
+            return count;
+        }
+    }
+
+    NodeType* getHead() { return m_head; }
+    NodeType* getTail() { return m_tail; }
+    int64 getSize() { return m_size; }
 };

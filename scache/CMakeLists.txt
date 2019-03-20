@@ -23,18 +23,18 @@ add_executable (scache
     "simple-cache.cpp" 
     "cache-config.cpp"
     "cache-config.h"
-    "cache-object.h" 
-    "cache-object.cpp" 
+    "cache-base.h" 
+    "cache-base.cpp" 
     "cache-dict.h" 
-    "cache-dict.cpp" 
     "cache-list.h" 
-    "cache-list.cpp"
     "cache-server.h" 
     "cache-server.cpp"
     "request-buffer.h" 
     "request-buffer.cpp"
     "cache-session.h" 
-    "cache-session.cpp")
+    "cache-session.cpp"
+    "cache-tool.h"
+    "cache-tool.cpp")
 
 target_link_libraries(scache ${Boost_LIBRARIES})
 

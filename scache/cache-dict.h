@@ -54,13 +54,14 @@ private:
             return;
         }
         while (oldBucket->getSize() > 0) { 
-            auto pair = oldBucket->pop();
-            auto pos = hash(pair.m_one) % (size_t)m_nowSize;
+            auto node = oldBucket->popNode();
+            auto pos = hash(node->getValue().m_one) 
+                % (size_t)m_nowSize;
             BucketType* nowBucket = m_now[pos];
             if (!nowBucket)
                 m_now[pos] = new BucketType();
             nowBucket = m_now[pos];
-            nowBucket->add(pair);
+            nowBucket->addNode(node);
         }
         delete oldBucket; m_old[m_rehash] = nullptr;
         if ((--m_rehash) < 0) {
@@ -69,30 +70,55 @@ private:
             m_isRehash = false;
         }
     }
-    void setImpl(BucketType** arr, PairType& pair, SizeType arrSize) {
-        SizeType pos = hash(pair.m_one) % (size_t)arrSize;
-        BucketType* bucket = arr[pos];
-        if (!bucket) {
-            bucket = new BucketType();
-            arr[pos] = bucket;
-            bucket->add(pair);
-            m_useSize++;
-            return;
-        }
+
+    // 在rehash阶段进行set可能存在节点在两个数组之间的移动所以使用
+    // 当个函数来操作两个数组
+    void setImpl(PairType& pair) {
+        SizeType nowPos = hash(pair.m_one) % size_t(m_nowSize);
+        BucketType* nowBucket = m_now[nowPos];
+        if (!nowBucket) m_now[nowPos] = new BucketType();
+        nowBucket = m_now[nowPos];
 
         std::function<bool(KType&, BucketNodeType*)> func =
             [](KType& key, BucketNodeType* node) {
             return node->getValue().m_one == key;
         };
 
-        auto node = bucket->getNode(pair.m_one, func);
-        if (!node) {
-            bucket->add(pair);
+        auto nowNode = nowBucket->getNode(pair.m_one, func);
+        if (nowNode) {
+            // m_now中存在，直接更新
+            nowNode->getValue().m_two = pair.m_two;
+            return;
+        }
+        // m_now中不存在且非rehash阶段：新数据直接添加
+        if (!m_isRehash) {
+            nowBucket->add(pair);
             m_useSize++;
             return;
         }
-        node->getValue().m_two = pair.m_two;
+        // m_now中不存在且在rehash阶段：进一步搜索m_old
+        SizeType oldPos = hash(pair.m_one) % size_t(m_oldSize);
+        BucketType* oldBucket = m_old[oldPos];
+
+        if (!oldBucket) {
+            nowBucket->add(pair);
+            m_useSize++;
+            return;
+        }
+        
+        auto oldNode = oldBucket->getNode(pair.m_one, func);
+        if (oldNode) {
+            // m_old中存在：跟新节点，调整节点位置
+            oldNode->getValue().m_two = pair.m_two;
+            oldBucket->popNode(oldNode);
+            nowBucket->addNode(oldNode);
+        }
+        else {
+            nowBucket->add(pair);
+            m_useSize++;
+        }
     }
+
     PairType& getImpl(BucketType** arr, KType& key, SizeType arrSize) {
         SizeType pos = hash(key) % (size_t)arrSize;
         BucketType* bucket = arr[pos];
@@ -195,11 +221,7 @@ public:
     }
 
     void set(PairType& pair) {
-        setImpl(m_now, pair, m_nowSize);
-
-        if (m_isRehash) {
-            delImpl(m_old, pair.m_one, m_oldSize);
-        }
+        setImpl(pair);
 
         if (m_useSize >= m_nowSize && !m_isRehash) {
             m_old = m_now;
@@ -208,7 +230,6 @@ public:
             m_nowSize = m_oldSize * 2;
             m_rehash = m_oldSize - 1;
             m_isRehash = true;
-            std::cout << "rehash start" << std::endl;
         }
         if (m_isRehash) rehashStep();
     }

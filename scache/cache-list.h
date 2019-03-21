@@ -61,7 +61,7 @@ public:
 
     void addNode(NodeType *node, NodeType *pos = nullptr) {
         if (!pos)
-            pos = m_head; // 若没有指定位置，默认从头部插入
+            pos = m_head; 
         auto temp = pos->getNext();
 
         pos->setNext(node);
@@ -78,7 +78,6 @@ public:
         m_size++;
     }
 
-    // 新建节点，添加到列表中，并返回该节点指针
     NodeType* add(ValueType& value) {
         auto node = new NodeType(value);
         addNode(node);
@@ -99,7 +98,6 @@ public:
     NodeType* popNode(NodeType* node = nullptr) {
         if (m_size <= 0)
             return nullptr;
-        // 默认从尾部弹出节点
         if (!node)
             node = m_tail;
         auto prev = node->getPrev();

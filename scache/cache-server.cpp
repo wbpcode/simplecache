@@ -592,6 +592,7 @@ void expireTaskHandler(){
         SimpleCache::PairType* pair_p =
             getHeadPointer(temp, SimpleCache::PairType, m_two);
         std::string key = pair_p->m_one;
+        // std::cout << key << std::endl;
         // 锁过期自动销毁，第二个参数没有作用
         cache->getClientLock(key, key);
         // 数据过期自动销毁，包括链表关系，客户端锁，过期时间

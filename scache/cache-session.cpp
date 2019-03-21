@@ -24,7 +24,6 @@ void revcHandlerImpl(std::string &peer, std::string &rawData) {
 }
 
 void shutHandlerImpl(std::string &peer, std::string &message) {
-    // �漰��Session�����٣����ȱ���peer��message
     std::string tempPeer = std::move(peer);
     std::string tempMessage = std::move(message);
     auto sessionManager = getSessionManager();
@@ -78,14 +77,11 @@ void Session::async_recv() {
                     std::string temp = std::string(m_buffer, 0, size);
                     m_recvHandler(m_name, temp);
                 }
-                m_lastAccess =
-                    std::chrono::time_point_cast<std::chrono::milliseconds>(
-                        std::chrono::system_clock::now())
-                        .time_since_epoch()
-                        .count();
+                m_lastAccess = getCurrentTime();
             } else {
                 if (m_shutHandler) {
                     m_shutHandler(m_name, ec.message());
+                    m_deadTimer.cancel();
                 }
             }
         });
@@ -104,6 +100,7 @@ void Session::aysnc_send(const std::string &result) {
             } else {
                 if (m_shutHandler) {
                     m_shutHandler(m_name, ec.message());
+                    m_deadTimer.cancel();
                 }
             }
         });

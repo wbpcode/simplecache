@@ -6,39 +6,31 @@ scache是一个简单的缓存中间件，支持int/long，string，list，dict�
 
 ```mermaid
 graph TD
-    A((CacheObject))-->B((CacheValue))
-    A-->C((CacheContainer))
+    A((CacheBase))-->B((CacheValue))
     B-->D(LongType)
     B-->E(StringType)
-    C-->F((CacheList))
-    C-->H((CacheDict))
-    C-->I((LinkedDict))
-    I-->J((SimpleCache))
+    A-->F((CacheList))
+    A-->H((CacheDict))
 ```
 
-* CacheObject：具有最基础的两个数据成员：key和type。在dict类型中(包括SimpleCache)，key不可缺省且唯一。而在CacheList中，key可以缺省，可以重复，仅作为辅助标记。type为常量，在CacheObject对象创建时初始化，不可更改，表示一个CacheOject的具体类型。type成员是枚举类型，目前可选的类型包括：LongType，StringType，ListType，DictType，LinkType。
+* CacheBase：只有最基础的数据成员type，type成员数据类型为CacheType。CacheType为自定的枚举类型。type成员再对象创建时初始化，不可更改，表示一个CacheObject的具体类型。CacheType目前可选类型包括：LongType，StringType，ListType，DictType。
 
-* CacheValue：继承自CacheObject，增加了一个void类型指针，用于存储数据。数据类型可能为整型数或者字符串(理论上可以支持所有类型，但是在具体的使用中，只做了对整型数和字符串的支持，所谓的支持表现在CacheValue的析构上，必须知道明确的数据类型，才可以对void指针指向的数据进行正确的析构和空间回收)，使用type成员来区分。
+* CacheValue：继承自CacheBase，增加了一个void类型指针，用于存储数据。数据类型可能为整型数或者字符串，根据继承自CacheBase的type成员区分。对于整型数类型，直接使用void指针存储该整型数(void类型指针占据8个字节的内存，可以通过强制类型转换存储long long类型的整型数)，减少空间消耗，提高性能。而对于字符串类型数据，创建std::string对象并将其指针转换为void类型指针并存储。CacheValue主要新增了两个接口：getValue和setValue。getValue返回一个字符串std::string类型的数据(如果该CacheValue存储整型数类型，则将该整型数转换为字符串)，而setValue则接受一个字符串std::string类型数据，并根据type成员决定是否转换为整型数类型进行存储。
 
+* CacheList：自定义模板类，双链表结构，使用模板类CacheListNode存储相关的数据对象。CacheListNode中包含指向上一节点和下一节点的指针。
 
-* CacheContainer：抽象类，包括addKeyValue，getKeyValue，delKeyValue三个虚函数接口。
+* CacheDict：自定义模板类，哈希表结构，可以模板类CachePair存储key-value数据对，每个哈希桶中存储一个指向CacheList类型的指针。鉴于std::unordered_map在发生rehash时可能会导致较长时间的挂起，所以重新设计和编写了一个哈希表结构。使用逐步rehash的方法，当载入因子大于等于1时，启动rehash操作，rehash不会立刻将所有的数据拷贝到新的数组中，而是设置一个标志。之后，在每一次哈希表的操作中，都会有一个哈希桶中的所有对象被移动到新的哈希表中，直到旧数组中所有哈希桶处理完毕，旧数组会被销毁，rehash完成。
 
-
-* CacheList：双链表结构，使用额外的CacheListNode结构对CacheObject及其派生类进行了再一层的封装，方便实现链表的各种操作。CacheListNode包含了指向上一节点和下一节点的指针。
-
-* CacheDict：鉴于重新实现了一个功能齐全，可靠高效的哈希字典工作量较大，也比较复杂，此处采用了对std::unordered_map进行封装的方式来实现CacheDict。
-
-* LinkedDict：CacheDict和CacheList的组和结构，提供字典和链表的所有功能。
-
-* SimpleCache：继承自LinkedDict，重写了addKeyValue，getKeyValue，delKeyValue三个虚函数，增加了过期时间表，锁表等结构和相关的操作方法。整个的缓存空间，就是一个大的SimpleCache对象。
-
-**为了保证所有的缓存对象都在堆上，所有的CacheObject及其派生类(除了SimpleCache)，的构造函数和析构函数都被声明为protected，避免在外部直接创建CacheObject及其派生类对象。之后，提供一个getInstance函数，并将该函数声明为各个类的友元函数，通过getInstance来创建和返回CacheObject及其派生类的堆上对象。**
+**注1：缓存对象应该为堆上对象，所以提供一个getInstance函数，用于创建缓存对象；以及一个delInstance，用于销毁缓存对象。**
+**注2：getInstance和delInstance的使用并非强制：因为以上类型的构造函数和析构函数都是public，所以可以直接使用new和delete操作符创建和销毁对象。**
+**注3：之所以不将以上缓存类型的构造函数析构函数声明为私有，然后将gelInstance和delInstance声明为类型友元，是因为CacheDict和CacheList是泛型模板，除了用于管理和存储缓存对象之外，也用于存储和管理如过期时间，客户端锁等结构，作为通用的基础设施，不宜限定获取对应对象的方式。**
+**注4：应当使用delInstance销毁缓存对象，原因如下：CacheDict和CacheList是通用的基础设施，和std提供的哈希表和链表类似，只负责管理“放到容器中的数据”的管理和空间的回收，也就是说，如果方法其中的是指向堆上对象的指针，CacheDict和CacheList只管理指针，不管理堆上对象，同样不负责堆上对象的空间回收，所以直接对CacheDict和CacheList析构，假设其中仍旧存储了部分的缓存对象指针，则可能内存泄露。而delInstance在销毁CacheDict和CacheList之前，会递归的遍历其中存储的缓存对象，以保证空间被正确的回收。**
 
 ## 关键结构
 
 以下四个数据结构分别负责：数据管理，数据传输，连接管理，配置管理。每个结构全局唯一，使用单例模式来保证唯一性。其构造函数被声明为私有，使用一个get\<类型名\>函数来获取唯一的一个实例。每个get\<类型名\>函数内都有一个对应类型指针的静态局部变量，该变量只会被初始化一次。之后每一次调用get\<类型名\>函数都会返回该指针。
 
-* SimpleCache：缓存数据的实际管理者，全局唯一。提供缓存操作的相关API，包括增删查改以及缓存对象。所有的缓存对象管理和组织在一个LinkedDict中。
+* SimpleCache：缓存数据的实际管理者，全局唯一。提供缓存操作的相关API，包括增删查改以及缓存对象。所有的缓存对象管理和组织在一个CacheDict\<CacheListNode\<CacheBase\*\>\>中，哈希表中所有的CacheListNode之间的关系使用一个CacheList\<CacheBase\*\>链表来管理。此外，SimpleCache中同样有过期时间表和客户端锁表，用于支持数据对象过期以及客户端的加锁解锁。
 
 * SessionManger：所有连接的管理者，全局唯一。接受外部连接和请求，负责连接(Session)的创建和销毁。整个缓存系统数据的输入端和输出端。所有的连接保存在一个字典中，使用IP地址和端口号组成的字符串作为key。
 
@@ -66,7 +58,7 @@ F --> D
 在当前的实现中，scache一共有三个线程来协同为客户端提供数据缓存服务：
 * 线程1：监听和数据请求预处理。负责监听端口，建立连接，接收客户端数据并进行解析和预处理，将数据封装成为Reqeust(Request中包含对应连接的ip:port，以及初步解析之后的请求数据)，并添加到RequestBuffer中。
 * 线程2：不断从RequestBuffer中获取请求并进行请求的处理，最后根据Request中的ip:port将处理结果发送给对应客户端。线程2是唯一一个可以直接对SimpleCache进行修改的线程。所有涉及数据修改的操作都必须发布到RequestBuffer中并由线程2处理。保证只有一个线程可以直接修改数据，不但可以避免因为多线程同时操作缓存数据而带来的数据一致性问题，也避免了对缓存数据进行频繁而复杂的加锁和解锁。
-* 线程3： 定时任务，周期性检查SimpleCache中缓存对象是否过期。假设某个数据对象过期，则在RequestBuffer中添加一个del key请求来删除该对象。
+* 线程3： 定时任务，周期性向RequestBuffer中添加一个请求，当线程2处理到该请求，就会启动过期检查任务，检查过期的缓存对象。
 
 一个客户端从建立连接到处理数据请求到连接断开的完整流程如下：
 ```sequence
@@ -82,7 +74,7 @@ F --> D
 
 ## 淘汰策略
 
-采用基于LRU的数据淘汰策略，LRU是一种经典的缓存数据替换算法，SimpleCache本身使用LinkedDict实现也是为了方便实现LRU淘汰和替换策略。
+采用基于LRU的数据淘汰策略，LRU是一种经典的缓存数据替换算法，SimpleCache本身使用CacheDict和CacheList组和，方便实现LRU淘汰和替换策略。
 
 每当一个数据对象被访问(读或者写)，该数据对象就会被移动到所在链表的首部(一个O(1)的操作)。所以每次链表尾部就是最长时间未访问的数据对象，优先被淘汰。
 
@@ -92,7 +84,7 @@ F --> D
 
 采用懒惰检查和定期主动检查相结合的方法。
 懒惰检查：在对缓存数据访问前，首先会检查该key对应对象是否过期，假设过期则将该对象删除并返回“对象不存在”的错误信息。
-主动检查：周期性检查SimpleCache中对象是否过期，SimpleCache本身为LinkedDict，并且支持LRU的淘汰替换策略，其链表末尾就是最长时间未访问的数据对象。因此主动检查从链表末尾开始检查。每当一个数据对象被确定为过期，则主动检查会向RequestBuffer中添加一个删除请求。
+主动检查：周期性检查SimpleCache中对象是否过期，SimpleCache本身包含一个链表管理缓存对象，并且支持LRU的淘汰替换策略，其链表末尾就是最长时间未访问的数据对象。因此主动检查从链表末尾开始检查。每当一个数据对象被确定为过期，则该对象会被删除，且该对象相关的过期时间，客户端锁同样会被删除。
 
 ## 指令支持
 
@@ -118,18 +110,14 @@ F --> D
 删除key1对应的字典中key2对应的键值对。
 
 ### 链表指令
-* **ladd** key(string) value(int/long/string)
-向key对应的链表中添加value对象，新建对象的key缺省。
-* **ladd** key1(string) key2(string) value(int/long/string)
-向key1对应的链表中添加value对象，新建对象的key为key2。
+* **ladd** key1(string) value1(int/long/string) [value2(int/long/string) ...]
+向key1对应的链表中添加至少一个value。
 * **lpop** key(string)
 从key对应的链表中末尾弹出一个对象，并将其返回
-* **lpop** key1(string) key2(string)
-从key对应的链表中弹出key为key2的对象。该操作需要遍历链表进行搜索，慎用。
-* **lget** key1(string) key2(string)
-从key对应的链表中获取key为key2的对象。该操作需要遍历链表进行搜索，慎用。
+* **lget** key(string)
+从key对应的链表的头部获取一个对象，并将其返回
 * **lall** key(string)
-返回链表中所有的对象。以key1 value1 \r\n key2 value2......的形式返回，部分key缺省，以(empty)替代之。遍历链表，操作量大，慎用。
+返回链表中所有的对象。以value1 \r\n value2......的形式返回。
 
 ### 加锁解锁
 

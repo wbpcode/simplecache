@@ -226,7 +226,7 @@ public:
         if (m_useSize >= m_nowSize && !m_isRehash) {
             m_old = m_now;
             m_oldSize = m_nowSize;
-            m_now = new BucketType*[m_oldSize * 2]();
+            m_now = new BucketType*[m_oldSize * m_growFactor]();
             m_nowSize = m_oldSize * 2;
             m_rehash = m_oldSize - 1;
             m_isRehash = true;

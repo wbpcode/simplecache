@@ -46,7 +46,7 @@ public:
     void setSendHandler(Handler handler);
     void setRecvHandler(Handler handler);
     void setShutHandler(Handler handler);
-    // ����������߳�ʱʱ��ִ��
+
     std::string getPeer();
 };
 

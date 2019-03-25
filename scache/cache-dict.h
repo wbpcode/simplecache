@@ -72,7 +72,7 @@ private:
     }
 
     // 在rehash阶段进行set可能存在节点在两个数组之间的移动所以使用
-    // 当个函数来操作两个数组
+    // 单个函数来操作两个数组
     void setImpl(PairType& pair) {
         SizeType nowPos = hash(pair.m_one) % size_t(m_nowSize);
         BucketType* nowBucket = m_now[nowPos];
@@ -108,7 +108,7 @@ private:
         
         auto oldNode = oldBucket->getNode(pair.m_one, func);
         if (oldNode) {
-            // m_old中存在：跟新节点，调整节点位置
+            // m_old中存在：更新节点，调整节点位置
             oldNode->getValue().m_two = pair.m_two;
             oldBucket->popNode(oldNode);
             nowBucket->addNode(oldNode);

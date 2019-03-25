@@ -13,7 +13,7 @@ void delGlobalConfig() {
     delete getGlobalConfig();
 }
 
-// 使用命令行参数初始化CacheGlobalConfig
+// 使用命令行参数初始化GlobalConfig
 void initGlobalConfig(int argc, char** argv) {
     auto config = getGlobalConfig();
     bpo::options_description desc("Allowed options...");
